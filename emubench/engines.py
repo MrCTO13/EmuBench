@@ -6,6 +6,7 @@ from pathlib import Path
 import platform
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -48,7 +49,16 @@ def digest(path):
 
 def api(path):
     request = Request(API + path, headers={"User-Agent": "EmuBench/0.1", "Accept": "application/vnd.github+json"})
-    with urlopen(request, timeout=30) as response:
+    trust = ssl.create_default_context()
+    # A frozen Python may retain an OpenSSL prefix from the CI build machine.
+    # Augment its defaults with the distribution's installed CA roots.
+    if os.name != "nt":
+        for bundle in ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt",
+                       "/etc/pki/tls/certs/ca-bundle.crt"):
+            if Path(bundle).is_file():
+                trust.load_verify_locations(cafile=bundle)
+                break
+    with urlopen(request, timeout=30, context=trust) as response:
         return json.load(response)
 
 

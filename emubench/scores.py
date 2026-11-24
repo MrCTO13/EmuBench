@@ -18,6 +18,24 @@ REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
 
 
+def cpu_model():
+    try:
+        if platform.system() == "Darwin":
+            return subprocess.check_output(["/usr/sbin/sysctl", "-n", "machdep.cpu.brand_string"],
+                                           text=True, timeout=3).strip()
+        if os.name == "nt":
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
+                return winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            key, _, value = line.partition(":")
+            if key.strip() in ("model name", "Hardware") and value.strip():
+                return value.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "Unknown"
+
+
 def stats(times):
     if not isinstance(times, list) or not 100 <= len(times) <= 1_000_000:
         raise ValueError("Expected 100 to 1,000,000 measured frames")
@@ -104,7 +122,7 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
             "emulator": "mGBA", "version": version, "source_commit": commit,
             "core_sha256": core_hash, "worker_sha256": engines.digest(worker),
             "rom_sha256": rom_hash,
-            "system": platform.system(), "arch": platform.machine(),
+            "system": platform.system(), "arch": platform.machine(), "cpu": cpu_model(),
             "warmup_frames": warmup, "frames": frames, "rendered_frames": len(times),
             "audio_sample_frames": int(audio), "pixel_sample_signature": fingerprint,
             "frame_ns": times, **stats(times)}
@@ -150,10 +168,13 @@ def public_fields(result, title):
         type(result["warmup_frames"]) is not int or not 0 <= result["warmup_frames"] <= 1_000_000 or
         type(result["audio_sample_frames"]) is not int or result["audio_sample_frames"] <= 0):
         raise ValueError("Incomplete frame evidence")
+    cpu = result.get("cpu", "Unknown")
+    if not isinstance(cpu, str) or not 1 <= len(cpu) <= 160 or not cpu.isprintable():
+        raise ValueError("Invalid processor model")
     return {"run_id": str(uuid.UUID(result["id"])), "game": title.strip(), "profile": PROFILE,
             "emulator": "mGBA", "version": result["version"], "source_commit": result["source_commit"],
             "core_sha256": result["core_sha256"], "worker_sha256": result["worker_sha256"],
-            "os": result["system"], "arch": result["arch"], "warmup_frames": result["warmup_frames"],
+            "os": result["system"], "arch": result["arch"], "cpu": cpu, "warmup_frames": result["warmup_frames"],
             "rendered_frames": n, **stats(result["frame_ns"]), "timing": details.timeline(result["frame_ns"])}
 
 

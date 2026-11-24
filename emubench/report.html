@@ -15,7 +15,7 @@ function show(r) {
   byId("board").hidden=true; byId("detail").hidden=false; byId("back").hidden=Boolean(local);
   byId("context").textContent=local?"Private device report":"Community submission";
   byId("game").textContent=r.game;
-  byId("build").textContent="mGBA "+r.version+" · "+r.os+" "+r.arch+" · "+r.warmup_frames+" warm-up frames · "+r.rendered_frames+" measured frames";
+  byId("build").textContent="mGBA "+r.version+" · "+r.os+" "+r.arch+(r.cpu?" · "+r.cpu:"")+" · "+r.warmup_frames+" warm-up frames · "+r.rendered_frames+" measured frames";
   byId("when").textContent=r.when?(local?"Started ":"Published ")+r.when+(r.finished?" · Finished "+r.finished:""):"";
   const summary=byId("metrics");summary.replaceChildren();
   for(const [label,key] of [["Average FPS","average_fps"],["1% low FPS","low_1pct_fps"],["1% high FPS","high_1pct_fps"]]){
@@ -30,7 +30,7 @@ function key(s){return s.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowe
 function render() {
   const q=key(byId("query").value).split(" ");
   const matched=runs.filter(r=>q.every(t=>key(r.game).includes(t)));byId("rows").replaceChildren();
-  for(const r of matched){const row=document.createElement("tr");for(const value of [r.game,r.version,r.os+" "+r.arch,r.average_fps,r.low_1pct_fps,r.high_1pct_fps]){const cell=document.createElement("td");if(!row.children.length){const link=document.createElement("a");link.href="#run-"+r.number;link.textContent=value;cell.append(link)}else{cell.textContent=typeof value==="number"?value.toFixed(2):value}row.append(cell)}byId("rows").append(row)}
+  for(const r of matched){const row=document.createElement("tr");for(const value of [r.game,r.version,r.os+" · "+(r.cpu||r.arch),r.average_fps,r.low_1pct_fps,r.high_1pct_fps]){const cell=document.createElement("td");if(!row.children.length){const link=document.createElement("a");link.href="#run-"+r.number;link.textContent=value;cell.append(link)}else{cell.textContent=typeof value==="number"?value.toFixed(2):value}row.append(cell)}byId("rows").append(row)}
   return matched.length;
 }
 let status="Loading published runs…";

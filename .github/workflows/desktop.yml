@@ -30,6 +30,7 @@ jobs:
       - name: Measure original generated workload and inspect public result
         shell: bash
         run: |
+          ./dist/emubench install mgba --version latest
           python tests/workload.py "$RUNNER_TEMP/sample.gba"
           ./dist/emubench run --version 0.10.5 --rom "$RUNNER_TEMP/sample.gba" --warmup-frames 30 --frames 300 --out "$RUNNER_TEMP/score.json"
           ./dist/emubench publish "$RUNNER_TEMP/score.json" --game "CI smoke workload" --preview

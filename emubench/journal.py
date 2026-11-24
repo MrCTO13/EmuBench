@@ -55,7 +55,7 @@ def history(game, limit):
             count += 1
             print(f"{start} .. {end or '?'}  {name}  mGBA {version}  {outcome}  ({context})")
             if avg is not None:
-                print(f"  {avg:.2f} avg / {low:.2f} low / {high:.2f} high FPS")
+                print(f"  {avg:.0f} avg / {low:.0f} low / {high:.0f} high FPS")
             if location or error:
                 print(" ", location or error)
         if not count:

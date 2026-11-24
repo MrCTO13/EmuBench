@@ -20,7 +20,7 @@ function show(r) {
   const summary=byId("metrics");summary.replaceChildren();
   for(const [label,key] of [["Average FPS","average_fps"],["1% low FPS","low_1pct_fps"],["1% high FPS","high_1pct_fps"]]){
     const col=document.createElement("div"),name=document.createElement("span"),value=document.createElement("strong");
-    name.textContent=label;value.textContent=r[key].toFixed(2);col.append(name,value);summary.append(col);
+    name.textContent=label;value.textContent=r[key].toFixed(0);col.append(name,value);summary.append(col);
   }
   drawTiming(byId("chart"),r.timing);
   byId("origin").replaceChildren();
@@ -30,7 +30,7 @@ function key(s){return s.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowe
 function render() {
   const q=key(byId("query").value).split(" ");
   const matched=runs.filter(r=>q.every(t=>key(r.game).includes(t)));byId("rows").replaceChildren();
-  for(const r of matched){const row=document.createElement("tr");for(const value of [r.game,r.version,r.os+" · "+(r.cpu||r.arch),r.average_fps,r.low_1pct_fps,r.high_1pct_fps]){const cell=document.createElement("td");if(!row.children.length){const link=document.createElement("a");link.href="#run-"+r.number;link.textContent=value;cell.append(link)}else{cell.textContent=typeof value==="number"?value.toFixed(2):value}row.append(cell)}byId("rows").append(row)}
+  for(const r of matched){const row=document.createElement("tr");for(const value of [r.game,r.version,r.os+" · "+(r.cpu||r.arch),r.average_fps,r.low_1pct_fps,r.high_1pct_fps]){const cell=document.createElement("td");if(!row.children.length){const link=document.createElement("a");link.href="#run-"+r.number;link.textContent=value;cell.append(link)}else{cell.textContent=typeof value==="number"?value.toFixed(0):value}row.append(cell)}byId("rows").append(row)}
   return matched.length;
 }
 let status="Loading published runs…";
@@ -40,7 +40,7 @@ function parse(issue){
   if(issue.pull_request||!Number.isInteger(issue.number)||!issue.title.startsWith("[Score "))return;
   const m=(issue.body||"").match(/\x60{3}json\s*([\s\S]*?)\x60{3}/);if(!m)return;
   try{const r=JSON.parse(m[1]);if(r.profile!=="gba-boot-no-input-v1"||typeof r.game!=="string"||r.game.length>90||r.emulator!=="mGBA")return;
-    if(!["average_fps","low_1pct_fps","high_1pct_fps"].every(k=>Number.isFinite(r[k])&&r[k]>0))return;
+    if(!["average_fps","low_1pct_fps","high_1pct_fps"].every(k=>Number.isFinite(r[k])&&r[k]>=0))return;
     if(!Array.isArray(r.timing)||!r.timing.length||r.timing.length>120||
        !r.timing.every(b=>["start_ms","end_ms","avg_fps","worst_fps","worst_ms","worst_frame","worst_at_ms"].every(k=>Number.isFinite(b[k]))&&b.end_ms>b.start_ms))return;
     runs.push({...r,number:issue.number,when:issue.created_at,finished:null});

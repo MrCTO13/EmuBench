@@ -40,11 +40,11 @@ jobs:
           ./dist/emubench campaign resume "$RUNNER_TEMP/test.sqlite"
           ./dist/emubench campaign export "$RUNNER_TEMP/test.sqlite" --job 1 --out "$RUNNER_TEMP/campaign.json"
           ./dist/emubench history --game sample
-          python -c "import pathlib,os,json; root=pathlib.Path(os.environ['RUNNER_TEMP']); data=json.loads((root/'campaign.json').read_text()); assert data['rendered_frames']==100 and data['finished_utc']; assert 'worst_at_ms' in (root/'chart.html').read_text(encoding='utf-8')"
+          python -c "import pathlib,os,json; root=pathlib.Path(os.environ['RUNNER_TEMP']); data=json.loads((root/'campaign.json').read_text()); assert data['rendered_frames']==100 and data['finished_utc'] and data['sampled_frame_changes']>0; assert 'worst_at_ms' in (root/'chart.html').read_text(encoding='utf-8')"
       - name: Assemble distribution
         shell: bash
         run: |
-          python -c "import shutil, pathlib; dest=pathlib.Path('distribution'); dest.mkdir(); [shutil.copy2(p, dest) for p in pathlib.Path('dist').iterdir()]; [shutil.copy2(p,dest) for p in ['README.md','LICENSE','THIRD-PARTY.md']]; shutil.copy2('emubench/native/libretro.h',dest/'libretro-header.h'); shutil.make_archive('emubench-${{ matrix.platform }}','zip',dest)"
+          python -c "import shutil, pathlib; dest=pathlib.Path('distribution'); dest.mkdir(); [shutil.copy2(p, dest) for p in pathlib.Path('dist').iterdir() if p.is_file()]; shutil.copytree('dist/third-party',dest/'third-party'); [shutil.copy2(p,dest) for p in ['README.md','LICENSE','THIRD-PARTY.md']]; shutil.copy2('emubench/native/libretro.h',dest/'libretro-header.h'); shutil.make_archive('emubench-${{ matrix.platform }}','zip',dest)"
       - uses: actions/upload-artifact@v4
         with:
           name: emubench-${{ matrix.platform }}

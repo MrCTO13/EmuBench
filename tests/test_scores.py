@@ -19,9 +19,9 @@ class Scores(unittest.TestCase):
 
     def test_percentiles_and_privacy(self):
         fields = scores.public_fields(self.trace, "A game")
-        self.assertEqual(fields["low_1pct_fps"], 101.01)
+        self.assertEqual(fields["low_1pct_fps"], 101)
         self.assertEqual(fields["high_1pct_fps"], 10000)
-        self.assertEqual(fields["average_fps"], 198.02)
+        self.assertEqual(fields["average_fps"], 198)
         self.assertNotIn("rom_sha256", fields)
         self.assertNotIn("frame_ns", fields)
         self.trace["rendered_frames"] -= 1

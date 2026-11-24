@@ -33,7 +33,8 @@ static struct {
 } core;
 static unsigned renders, pixel_bytes = 2;
 static uint64_t audio_frames, signature = 2166136261u;
-static bool bad_video;
+static bool bad_video, have_previous;
+static uint32_t previous_sample, visual_changes;
 #ifdef _WIN32
 static LARGE_INTEGER frequency, origin;
 #endif
@@ -113,10 +114,16 @@ static void video(const void *buffer, unsigned width, unsigned height, size_t pi
         return;
     }
     const uint8_t *pixels = buffer;
+    uint32_t sample = 2166136261u;
     for (unsigned i = 0; i < 8; i++) {
         size_t offset = (i * 19 + 5) * pitch + (i * 29 + 3) * pixel_bytes;
-        signature = (signature ^ pixels[offset]) * 16777619u;
+        for (unsigned channel = 0; channel < pixel_bytes; channel++)
+            sample = (sample ^ pixels[offset + channel]) * 16777619u;
     }
+    if (have_previous && sample != previous_sample) ++visual_changes;
+    have_previous = true;
+    previous_sample = sample;
+    signature = (signature ^ sample) * 16777619u;
     ++renders;
 }
 static void audio(int16_t left, int16_t right) { (void)left; (void)right; ++audio_frames; }
@@ -190,6 +197,8 @@ int main(int argc, char **argv) {
     if (!core.load_game(&game)) return fail("mGBA could not load this ROM");
     for (long i = 0; i < warmup; i++) core.run();
     audio_frames = 0;
+    visual_changes = 0;
+    have_previous = false;
     signature = 2166136261u;
     uint64_t last = clock_ns();
     for (long i = 0; i < frames; i++) {
@@ -202,7 +211,7 @@ int main(int argc, char **argv) {
         last = now;
     }
     if (!audio_frames) return fail("Core emitted no audio samples");
-    printf("EB1\n%s\n%" PRIu64 "\n%016" PRIx64 "\n", version, audio_frames, signature);
+    printf("EB2\n%s\n%" PRIu64 "\n%016" PRIx64 "\n%" PRIu32 "\n", version, audio_frames, signature, visual_changes);
     for (long i = 0; i < frames; i++) printf("%" PRIu64 "\n", timings[i]);
     core.unload_game();
     core.deinit();

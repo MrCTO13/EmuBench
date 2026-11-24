@@ -14,8 +14,8 @@ def timeline(times):
         peak = max(group)
         worst = group.index(peak)
         bins.append({"start_ms": round(elapsed / 1e6, 6), "end_ms": round((elapsed + duration) / 1e6, 6),
-                     "avg_fps": round(1e9 * len(group) / duration, 2),
-                     "worst_fps": round(1e9 / peak, 2), "worst_ms": round(peak / 1e6, 6),
+                     "avg_fps": round(1e9 * len(group) / duration),
+                     "worst_fps": round(1e9 / peak), "worst_ms": round(peak / 1e6, 6),
                      "worst_frame": offset + worst + 1,
                      "worst_at_ms": round((elapsed + sum(group[:worst + 1])) / 1e6, 6)})
         elapsed += duration

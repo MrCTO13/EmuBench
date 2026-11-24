@@ -43,9 +43,9 @@ def stats(times):
         raise ValueError("Invalid frame interval")
     ordered = sorted(times)
     n = len(times)
-    return {"average_fps": round(1e9 * n / sum(times), 2),
-            "low_1pct_fps": round(1e9 / ordered[(99 * n + 99) // 100 - 1], 2),
-            "high_1pct_fps": round(1e9 / ordered[(n + 99) // 100 - 1], 2)}
+    return {"average_fps": round(1e9 * n / sum(times)),
+            "low_1pct_fps": round(1e9 / ordered[(99 * n + 99) // 100 - 1]),
+            "high_1pct_fps": round(1e9 / ordered[(n + 99) // 100 - 1])}
 
 
 class InterruptedWindow(InterruptedError):
@@ -68,14 +68,17 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready):
         with subprocess.Popen(args, cwd=folder, env=env, stdin=source, stdout=output, stderr=errors) as proc:
             try:
                 while True:
+                    before_wait = time.time()
                     remaining = timeout - (time.monotonic() - start)
                     if remaining <= 0:
                         raise TimeoutError("Measurement timed out")
                     try:
                         proc.wait(timeout=min(1, remaining) if ready else remaining)
+                        if ready and time.time() - before_wait > 5:
+                            raise InterruptedWindow("Host monitoring gap during timing")
                         break
                     except subprocess.TimeoutExpired:
-                        if ready and not ready():
+                        if ready and (time.time() - before_wait > 5 or not ready()):
                             raise InterruptedWindow("Device became busy during timing")
                 if proc.returncode == 75:
                     raise InterruptedWindow("Another measurement is active on this device")
@@ -112,19 +115,19 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     core_hash = engines.digest(core)
     worker = engines.worker()
     output = run_worker(worker, core, data, warmup, frames, timeout, ready)
-    if len(output) != frames + 4 or output[0] != "EB1":
+    if len(output) != frames + 5 or output[0] != "EB2":
         raise ValueError("Incomplete frame evidence")
-    version, audio, fingerprint = output[1:4]
+    version, audio, fingerprint, visual_changes = output[1:5]
     if tag and version != tag:
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
-    times = list(map(int, output[4:]))
+    times = list(map(int, output[5:]))
     return {"schema": 1, "id": str(uuid.uuid4()), "profile": PROFILE,
             "emulator": "mGBA", "version": version, "source_commit": commit,
             "core_sha256": core_hash, "worker_sha256": engines.digest(worker),
             "rom_sha256": rom_hash,
             "system": platform.system(), "arch": platform.machine(), "cpu": cpu_model(),
             "warmup_frames": warmup, "frames": frames, "rendered_frames": len(times),
-            "audio_sample_frames": int(audio), "pixel_sample_signature": fingerprint,
+            "sampled_frame_changes": int(visual_changes), "audio_sample_frames": int(audio), "pixel_sample_signature": fingerprint,
             "frame_ns": times, **stats(times)}
 
 
@@ -196,7 +199,7 @@ def publish(public):
         if not url:
             body = (f"Personal GBA ROM · self-reported · {PROFILE}\n\n"
                     "| Average FPS | 1% low FPS | 1% high FPS |\n| ---: | ---: | ---: |\n"
-                    f"| {public['average_fps']:.2f} | {public['low_1pct_fps']:.2f} | {public['high_1pct_fps']:.2f} |\n\n"
+                    f"| {public['average_fps']:.0f} | {public['low_1pct_fps']:.0f} | {public['high_1pct_fps']:.0f} |\n\n"
                     + "\x60\x60\x60json\n" + json.dumps(public, ensure_ascii=False, indent=2) + "\n\x60\x60\x60")
             payload = {"title": f"{prefix} {public['game']} · mGBA {public['version']}", "body": body}
             response = subprocess.run(["gh", "api", "--method", "POST", f"repos/{REPOSITORY}/issues",

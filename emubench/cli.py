@@ -65,9 +65,9 @@ def main(argv=None):
                 path = scores.save(result, args.out)
                 journal.complete(result, path)
             print(f"mGBA {result['version']} · {result['rendered_frames']} rendered frames\n"
-                  f"Average FPS   {result['average_fps']:.2f}\n"
-                  f"1% low FPS    {result['low_1pct_fps']:.2f}\n"
-                  f"1% high FPS   {result['high_1pct_fps']:.2f}\nPrivate result: {path}")
+                  f"Average FPS   {result['average_fps']:.0f}\n"
+                  f"1% low FPS    {result['low_1pct_fps']:.0f}\n"
+                  f"1% high FPS   {result['high_1pct_fps']:.0f}\nPrivate result: {path}")
         else:
             public = scores.public_fields(json.loads(args.result.read_text(encoding="utf-8")), args.game)
             print(json.dumps(public, indent=2, ensure_ascii=False), flush=True)

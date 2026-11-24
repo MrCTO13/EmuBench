@@ -150,7 +150,7 @@ def resume(db, path, plan):
                         message, finished = "all remaining jobs need review", True
                 else:
                     message, finished = "queue finished", True
-            elif shutil.disk_usage(path.parent).free < 256 * 1024**2:
+            elif min(shutil.disk_usage(p).free for p in (path.parent, engines.home(), tempfile.gettempdir())) < 256 * 1024**2:
                 message, wait = "waiting for disk space", 30
             elif not ready() or (sys.platform == "darwin" and not plan["dedicated"] and not plan["idle_check"]
                                  and os.getloadavg()[0] >= max(1.0, (os.cpu_count() or 1) * .5)):

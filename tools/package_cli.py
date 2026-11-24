@@ -1,6 +1,9 @@
 """Produce a downloadable single executable with the native timing worker embedded."""
 from pathlib import Path
 import os
+import shutil
+import sysconfig
+from importlib import metadata
 import subprocess
 import sys
 
@@ -19,3 +22,11 @@ subprocess.run([sys.executable, "-m", "PyInstaller", "--onefile", "--clean", "--
                 "--add-binary", str(native) + os.pathsep + "emubench/native/bin", str(entry)], check=True)
 
 Path("dist/scores.html").write_text(template_html(), encoding="utf-8")
+
+notices = Path("dist/third-party")
+notices.mkdir(exist_ok=True)
+python_licenses = [Path(sys.base_prefix) / "LICENSE.txt", Path(sysconfig.get_path("stdlib")) / "LICENSE.txt"]
+shutil.copy2(next(p for p in python_licenses if p.is_file()), notices / "Python-LICENSE.txt")
+installer = metadata.distribution("pyinstaller")
+license_path = next(p for p in installer.files if p.name == "COPYING.txt")
+shutil.copy2(installer.locate_file(license_path), notices / "PyInstaller-COPYING.txt")

@@ -48,8 +48,8 @@ function drawTiming(host, bins) {
     const b=bins[index];slider.value=index;
     cursor.setAttribute("x1",x(b.worst_at_ms));cursor.setAttribute("x2",x(b.worst_at_ms));
     note.textContent=(b.start_ms/1000).toFixed(3)+"–"+(b.end_ms/1000).toFixed(3)+" s · "+
-      b.avg_fps.toFixed(1)+" average FPS · slowest frame #"+b.worst_frame+" took "+b.worst_ms.toFixed(3)+
-      " ms ("+b.worst_fps.toFixed(1)+" FPS).";
+      b.avg_fps.toFixed(0)+" average FPS · slowest frame #"+b.worst_frame+" took "+b.worst_ms.toFixed(3)+
+      " ms ("+b.worst_fps.toFixed(0)+" FPS).";
   }
   slider.addEventListener("input",()=>select(Number(slider.value)));
   svg.addEventListener("pointerdown",event=>{

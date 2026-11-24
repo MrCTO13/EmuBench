@@ -10,6 +10,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 UPSTREAM = "https://github.com/mgba-emu/mgba.git"
@@ -47,8 +48,7 @@ def digest(path):
     return h.hexdigest()
 
 
-def api(path):
-    request = Request(API + path, headers={"User-Agent": "EmuBench/0.1", "Accept": "application/vnd.github+json"})
+def open_upstream(request):
     trust = ssl.create_default_context()
     # A frozen Python may retain an OpenSSL prefix from the CI build machine.
     # Augment its defaults with the distribution's installed CA roots.
@@ -58,18 +58,41 @@ def api(path):
             if Path(bundle).is_file():
                 trust.load_verify_locations(cafile=bundle)
                 break
-    with urlopen(request, timeout=30, context=trust) as response:
+    return urlopen(request, timeout=30, context=trust)
+
+
+def api(path):
+    request = Request(API + path, headers={"User-Agent": "EmuBench/0.1", "Accept": "application/vnd.github+json"})
+    with open_upstream(request) as response:
         return json.load(response)
 
 
+def remote_tags(*refs):
+    output = subprocess.check_output(["git", "ls-remote", "--tags", UPSTREAM, *refs], text=True, timeout=60)
+    return {ref: commit for commit, ref in (line.split() for line in output.splitlines())}
+
+
 def releases():
-    return [r["tag_name"] for r in api("/releases?per_page=100")
-            if not r["prerelease"] and not r["draft"] and TAG.fullmatch(r["tag_name"])]
+    try:
+        return [r["tag_name"] for r in api("/releases?per_page=100")
+                if not r["prerelease"] and not r["draft"] and TAG.fullmatch(r["tag_name"])]
+    except HTTPError as exc:
+        if exc.code not in (403, 429):
+            raise
+        names = [ref.removeprefix("refs/tags/") for ref in remote_tags()]
+        return sorted((v for v in names if TAG.fullmatch(v)),
+                      key=lambda v: tuple(map(int, v.split("."))), reverse=True)
 
 
 def release_tag(value):
     if value == "latest":
-        value = api("/releases/latest")["tag_name"]
+        # The canonical latest-release redirect also works on shared networks
+        # that have exhausted GitHub's unauthenticated REST quota.
+        with open_upstream(Request("https://github.com/mgba-emu/mgba/releases/latest", method="HEAD")) as response:
+            prefix = "https://github.com/mgba-emu/mgba/releases/tag/"
+            if not response.url.startswith(prefix):
+                raise ValueError("Unexpected mGBA release redirect")
+            value = response.url[len(prefix):]
     if not TAG.fullmatch(value):
         raise ValueError("Use a stable mGBA release such as 0.10.5 or latest")
     return value
@@ -128,11 +151,12 @@ def install(value):
     dest = parent / tag
     name = "mgba_libretro" + LIB[platform.system()]
     if not dest.is_dir():
-        if tag != REFERENCE:
-            release = api("/releases/tags/" + tag)
-            if release["prerelease"] or release["draft"] or release["tag_name"] != tag:
-                raise ValueError("Choose a published stable mGBA release")
-        commit = REFERENCE_COMMIT if tag == REFERENCE else api("/commits/" + tag)["sha"]
+        if tag == REFERENCE:
+            commit = REFERENCE_COMMIT
+        else:
+            ref = "refs/tags/" + tag
+            tags = remote_tags(ref, ref + "^{}")
+            commit = tags.get(ref + "^{}", tags.get(ref, ""))
         if not SHA.fullmatch(commit):
             raise ValueError("Invalid upstream commit identity")
         parent.mkdir(parents=True, exist_ok=True)

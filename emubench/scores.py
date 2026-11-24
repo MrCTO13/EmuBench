@@ -9,9 +9,10 @@ import re
 import sqlite3
 import subprocess
 import tempfile
+import time
 import uuid
 
-from . import engines
+from . import details, engines
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
@@ -29,12 +30,59 @@ def stats(times):
             "high_1pct_fps": round(1e9 / ordered[(n + 99) // 100 - 1], 2)}
 
 
-def measure(rom, requested, core, warmup, frames, timeout):
+class InterruptedWindow(InterruptedError):
+    """The device became busy or another worker owns the measurement slot."""
+
+
+def run_worker(worker, core, data, warmup, frames, timeout, ready):
+    engines.home().mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
+           "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
+    # File handles avoid pipe back-pressure while the parent watches idle state.
+    with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryFile() as source, \
+         tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+        source.write(data)
+        source.seek(0)
+        if ready and not ready():
+            raise InterruptedWindow("Waiting for idle")
+        args = [worker, str(len(data)), str(warmup), str(frames)]
+        start = time.monotonic()
+        with subprocess.Popen(args, cwd=folder, env=env, stdin=source, stdout=output, stderr=errors) as proc:
+            try:
+                while True:
+                    remaining = timeout - (time.monotonic() - start)
+                    if remaining <= 0:
+                        raise TimeoutError("Measurement timed out")
+                    try:
+                        proc.wait(timeout=min(1, remaining) if ready else remaining)
+                        break
+                    except subprocess.TimeoutExpired:
+                        if ready and not ready():
+                            raise InterruptedWindow("Device became busy during timing")
+                if proc.returncode == 75:
+                    raise InterruptedWindow("Another measurement is active on this device")
+                if proc.returncode:
+                    errors.seek(0)
+                    raise ValueError(f"mGBA worker exited {proc.returncode}. "
+                                     + errors.read(1000).decode(errors="replace").strip())
+                if ready and not ready():
+                    raise InterruptedWindow("Device became busy during timing")
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+        output.seek(0)
+        return output.read().decode("ascii").splitlines()
+
+
+def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_rom=None):
     if not 100 <= frames <= 1_000_000 or not 0 <= warmup <= 1_000_000 or timeout <= 0:
         raise ValueError("Use 100–1,000,000 measured frames, 0–1,000,000 warm-up frames and a positive timeout")
     if rom.suffix.lower() != ".gba" or not rom.is_file() or not 192 <= rom.stat().st_size <= 32 * 1024**2:
         raise ValueError("Choose an unpacked .gba file (192 bytes to 32 MiB)")
     data = rom.read_bytes()
+    rom_hash = hashlib.sha256(data).hexdigest()
+    if expected_rom is not None and expected_rom != rom_hash:
+        raise ValueError("ROM changed since the campaign was created")
     if data[3:4] != b"\xea":
         raise ValueError("This file does not have the expected GBA cartridge header")
     if core:
@@ -45,14 +93,7 @@ def measure(rom, requested, core, warmup, frames, timeout):
         tag, commit = meta["tag"], meta["commit"]
     core_hash = engines.digest(core)
     worker = engines.worker()
-    with tempfile.TemporaryDirectory() as folder:
-        env = {**os.environ, "EMUBENCH_CORE_PATH": str(core)}
-        proc = subprocess.run([worker, str(len(data)), str(warmup), str(frames)], cwd=folder,
-                              env=env, input=data, capture_output=True, timeout=timeout)
-    if proc.returncode:
-        message = proc.stderr.decode(errors="replace").strip()[-500:]
-        raise ValueError(f"mGBA worker exited {proc.returncode}. {message}")
-    output = proc.stdout.decode("ascii").splitlines()
+    output = run_worker(worker, core, data, warmup, frames, timeout, ready)
     if len(output) != frames + 4 or output[0] != "EB1":
         raise ValueError("Incomplete frame evidence")
     version, audio, fingerprint = output[1:4]
@@ -62,7 +103,7 @@ def measure(rom, requested, core, warmup, frames, timeout):
     return {"schema": 1, "id": str(uuid.uuid4()), "profile": PROFILE,
             "emulator": "mGBA", "version": version, "source_commit": commit,
             "core_sha256": core_hash, "worker_sha256": engines.digest(worker),
-            "rom_sha256": hashlib.sha256(data).hexdigest(),
+            "rom_sha256": rom_hash,
             "system": platform.system(), "arch": platform.machine(),
             "warmup_frames": warmup, "frames": frames, "rendered_frames": len(times),
             "audio_sample_frames": int(audio), "pixel_sample_signature": fingerprint,
@@ -113,7 +154,7 @@ def public_fields(result, title):
             "emulator": "mGBA", "version": result["version"], "source_commit": result["source_commit"],
             "core_sha256": result["core_sha256"], "worker_sha256": result["worker_sha256"],
             "os": result["system"], "arch": result["arch"], "warmup_frames": result["warmup_frames"],
-            "rendered_frames": n, **stats(result["frame_ns"])}
+            "rendered_frames": n, **stats(result["frame_ns"]), "timing": details.timeline(result["frame_ns"])}
 
 
 def publish(public):

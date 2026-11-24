@@ -47,3 +47,16 @@ class Scores(unittest.TestCase):
             scores.save(self.trace, dest)
             with self.assertRaises(FileExistsError):
                 scores.save(self.trace, dest)
+
+    def test_single_frame_dip_is_visible(self):
+        from emubench.details import timeline
+        frames = [1_000_000] * 1800
+        frames[707] = 40_000_000
+        bins = timeline(frames)
+        slow = max(bins, key=lambda b: b["worst_ms"])
+        self.assertLessEqual(len(bins), 120)
+        self.assertEqual(slow["worst_frame"], 708)
+        self.assertEqual(slow["worst_ms"], 40)
+        self.assertEqual(slow["worst_fps"], 25)
+        self.assertEqual(slow["worst_at_ms"], 747)
+        self.assertAlmostEqual(bins[-1]["end_ms"], sum(frames)/1e6)

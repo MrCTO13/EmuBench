@@ -1,10 +1,11 @@
 import argparse
 import json
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 
-from . import engines, scores
+from . import campaign, details, engines, journal, scores
 
 
 def main(argv=None):
@@ -31,9 +32,24 @@ def main(argv=None):
     publish.add_argument("--game", default="Personal GBA ROM", help="Optional public display title")
     publish.add_argument("--preview", action="store_true", help="Print the public fields and exit offline")
     publish.add_argument("--yes", action="store_true", help="Approve public submission without a prompt")
+    hist = commands.add_parser("history", help="Show this device's private run log")
+    hist.add_argument("--game", default="")
+    hist.add_argument("--limit", type=int, default=20)
+    report = commands.add_parser("details", help="Write an offline interactive FPS chart")
+    report.add_argument("result", type=Path)
+    report.add_argument("--out", required=True, type=Path)
+    campaign.arguments(commands)
     args = parser.parse_args(argv)
     try:
-        if args.command == "versions":
+        if args.command == "campaign":
+            campaign.execute(args)
+        elif args.command == "history":
+            journal.history(args.game, args.limit)
+        elif args.command == "details":
+            trace = json.loads(args.result.read_text(encoding="utf-8"))
+            public = scores.public_fields(trace, "Personal GBA ROM")
+            print(details.write_report(trace, public, args.out))
+        elif args.command == "versions":
             print("\n".join(engines.releases()))
         elif args.command == "install":
             path, meta = engines.install(args.version)
@@ -42,9 +58,12 @@ def main(argv=None):
             if not args.rom and not sys.stdin.isatty():
                 parser.error("supply --rom when running without a terminal")
             rom = args.rom or Path(input("Path to your GBA ROM: ").strip().strip('"'))
-            result = scores.measure(rom.expanduser(), args.version, args.core, args.warmup_frames,
-                                    args.frames, args.timeout)
-            path = scores.save(result, args.out)
+            with journal.attempt(rom, str(args.core.name if args.core else args.version or engines.REFERENCE)) as (run_id, start):
+                result = scores.measure(rom.expanduser(), args.version, args.core, args.warmup_frames,
+                                        args.frames, args.timeout)
+                result.update(id=run_id, local_name=rom.name, started_utc=start, finished_utc=journal.now())
+                path = scores.save(result, args.out)
+                journal.complete(result, path)
             print(f"mGBA {result['version']} · {result['rendered_frames']} rendered frames\n"
                   f"Average FPS   {result['average_fps']:.2f}\n"
                   f"1% low FPS    {result['low_1pct_fps']:.2f}\n"
@@ -61,6 +80,6 @@ def main(argv=None):
                     return 0
             print(scores.publish(public))
         return 0
-    except (OSError, ValueError, KeyError, TypeError, EOFError, subprocess.SubprocessError) as error:
+    except (scores.InterruptedWindow, sqlite3.Error, OSError, ValueError, KeyError, TypeError, EOFError, subprocess.SubprocessError) as error:
         print(f"Emu Bench: {error}", file=sys.stderr)
         return 1

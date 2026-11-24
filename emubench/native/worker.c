@@ -13,6 +13,9 @@
 #else
 #include <time.h>
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
 #endif
 
 /* The core runs in a dedicated child process. Python never enters the timed loop. */
@@ -38,6 +41,25 @@ static LARGE_INTEGER frequency, origin;
 static int fail(const char *message) {
     fprintf(stderr, "%s\n", message);
     return 1;
+}
+/* The OS releases this slot even if the controller or worker crashes. */
+static int claim_slot(void) {
+#ifdef _WIN32
+    const wchar_t *path = _wgetenv(L"EMUBENCH_WORKER_LOCK");
+    if (!path) return fail("Missing measurement lock path");
+    HANDLE lock = CreateFileW(path, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (lock != INVALID_HANDLE_VALUE) return 0;
+    return GetLastError() == ERROR_SHARING_VIOLATION ? 75 : fail("Cannot lock measurement slot");
+#else
+    const char *path = getenv("EMUBENCH_WORKER_LOCK");
+    int fd = path ? open(path, O_WRONLY | O_CREAT, 0600) : -1;
+    if (fd < 0) return fail("Cannot open measurement lock");
+    struct flock lock = {0};
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    if (fcntl(fd, F_SETLK, &lock) == 0) return 0;
+    return errno == EAGAIN || errno == EACCES ? 75 : fail("Cannot lock measurement slot");
+#endif
 }
 static uint64_t clock_ns(void) {
 #ifdef _WIN32
@@ -142,6 +164,8 @@ int main(int argc, char **argv) {
     if (!QueryPerformanceFrequency(&frequency) || !QueryPerformanceCounter(&origin))
         return fail("Performance clock unavailable");
 #endif
+    int lock_status = claim_slot();
+    if (lock_status) return lock_status;
     if (open_core()) return 1;
     struct retro_system_info info = {0};
     core.get_system_info(&info);

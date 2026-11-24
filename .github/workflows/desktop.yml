@@ -1,0 +1,42 @@
+name: Desktop CLI
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, platform: macos-arm64 }
+          - { os: windows-2022, platform: windows-x64 }
+          - { os: ubuntu-22.04, platform: linux-x64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test calculations and publication
+        run: python -m unittest discover -s tests
+      - name: Install the reference mGBA release
+        run: python -m emubench install mgba --version 0.10.5
+      - name: Package native CLI
+        run: |
+          python -m pip install pyinstaller==6.16.0
+          python tools/package_cli.py
+      - name: Measure original generated workload and inspect public result
+        shell: bash
+        run: |
+          python tests/workload.py "$RUNNER_TEMP/sample.gba"
+          ./dist/emubench run --version 0.10.5 --rom "$RUNNER_TEMP/sample.gba" --warmup-frames 30 --frames 300 --out "$RUNNER_TEMP/score.json"
+          ./dist/emubench publish "$RUNNER_TEMP/score.json" --game "CI smoke workload" --preview
+      - name: Assemble distribution
+        shell: bash
+        run: |
+          python -c "import shutil, pathlib; dest=pathlib.Path('distribution'); dest.mkdir(); [shutil.copy2(p, dest) for p in pathlib.Path('dist').glob('emubench*')]; [shutil.copy2(p,dest) for p in ['README.md','LICENSE','THIRD-PARTY.md']]; shutil.copy2('emubench/native/libretro.h',dest/'libretro-header.h'); shutil.make_archive('emubench-${{ matrix.platform }}','zip',dest)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emubench-${{ matrix.platform }}
+          path: emubench-${{ matrix.platform }}.zip

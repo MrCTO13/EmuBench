@@ -1,0 +1,188 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
+#include "libretro.h"
+#include <stdio.h>
+#include <inttypes.h>
+#include <stdlib.h>
+#include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+#else
+#include <time.h>
+#include <dlfcn.h>
+#endif
+
+/* The core runs in a dedicated child process. Python never enters the timed loop. */
+static struct {
+    unsigned (*api_version)(void);
+    void (*init)(void), (*deinit)(void), (*run)(void), (*unload_game)(void);
+    void (*get_system_info)(struct retro_system_info *);
+    void (*set_environment)(retro_environment_t);
+    void (*set_video_refresh)(retro_video_refresh_t);
+    void (*set_audio_sample)(retro_audio_sample_t);
+    void (*set_audio_sample_batch)(retro_audio_sample_batch_t);
+    void (*set_input_poll)(retro_input_poll_t);
+    void (*set_input_state)(retro_input_state_t);
+    bool (*load_game)(const struct retro_game_info *);
+} core;
+static unsigned renders, pixel_bytes = 2;
+static uint64_t audio_frames, signature = 2166136261u;
+static bool bad_video;
+#ifdef _WIN32
+static LARGE_INTEGER frequency, origin;
+#endif
+
+static int fail(const char *message) {
+    fprintf(stderr, "%s\n", message);
+    return 1;
+}
+static uint64_t clock_ns(void) {
+#ifdef _WIN32
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    uint64_t ticks = (uint64_t)(now.QuadPart - origin.QuadPart);
+    uint64_t hz = (uint64_t)frequency.QuadPart;
+    return (ticks / hz) * 1000000000ull + (ticks % hz) * 1000000000ull / hz;
+#else
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now)) exit(fail("Monotonic clock failed"));
+    return (uint64_t)now.tv_sec * 1000000000ull + now.tv_nsec;
+#endif
+}
+static bool environment(unsigned command, void *data) {
+    switch (command) {
+    case RETRO_ENVIRONMENT_GET_CAN_DUPE:
+        *(bool *)data = false;
+        return true;
+    case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
+        enum retro_pixel_format format = *(enum retro_pixel_format *)data;
+        pixel_bytes = format == RETRO_PIXEL_FORMAT_XRGB8888 ? 4 : 2;
+        return format == RETRO_PIXEL_FORMAT_RGB565 || format == RETRO_PIXEL_FORMAT_0RGB1555 ||
+               format == RETRO_PIXEL_FORMAT_XRGB8888;
+    }
+    case RETRO_ENVIRONMENT_GET_VARIABLE: {
+        struct retro_variable *var = data;
+        if (!strcmp(var->key, "mgba_frameskip")) var->value = "0";
+        else if (!strcmp(var->key, "mgba_use_bios")) var->value = "OFF";
+        else if (!strcmp(var->key, "mgba_skip_bios")) var->value = "ON";
+        else if (!strcmp(var->key, "mgba_idle_optimization")) var->value = "Don't Remove";
+        else return false;
+        return true;
+    }
+    case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
+        *(bool *)data = false;
+        return true;
+    case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE:
+        *(int *)data = 3;
+        return true;
+    case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS:
+        return true;
+    default:
+        return false;
+    }
+}
+static void video(const void *buffer, unsigned width, unsigned height, size_t pitch) {
+    if (!buffer || buffer == RETRO_HW_FRAME_BUFFER_VALID || width != 240 || height != 160 ||
+        pitch < width * pixel_bytes) {
+        bad_video = true;
+        return;
+    }
+    const uint8_t *pixels = buffer;
+    for (unsigned i = 0; i < 8; i++) {
+        size_t offset = (i * 19 + 5) * pitch + (i * 29 + 3) * pixel_bytes;
+        signature = (signature ^ pixels[offset]) * 16777619u;
+    }
+    ++renders;
+}
+static void audio(int16_t left, int16_t right) { (void)left; (void)right; ++audio_frames; }
+static size_t audio_batch(const int16_t *buffer, size_t frames) {
+    if (buffer) audio_frames += frames;
+    return frames;
+}
+static void poll_input(void) {}
+static int16_t input(unsigned port, unsigned device, unsigned index, unsigned id) {
+    (void)port; (void)device; (void)index; (void)id;
+    return 0;
+}
+static int open_core(void) {
+#ifdef _WIN32
+    const wchar_t *path = _wgetenv(L"EMUBENCH_CORE_PATH");
+    HMODULE lib = path ? LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH) : NULL;
+#define SYMBOL(n) GetProcAddress(lib, n)
+#else
+    const char *path = getenv("EMUBENCH_CORE_PATH");
+    void *lib = path ? dlopen(path, RTLD_NOW | RTLD_LOCAL) : NULL;
+#define SYMBOL(n) dlsym(lib, n)
+#endif
+    if (!lib) return fail("Cannot load the selected core. Check OS, architecture and dependencies.");
+#define BIND(field) do { void (*symbol)(void) = (void (*)(void)) SYMBOL("retro_" #field); \
+    if (!symbol) return fail("Missing libretro entry point: " #field); \
+    memcpy(&core.field, &symbol, sizeof(symbol)); } while (0)
+    BIND(api_version); BIND(init); BIND(deinit); BIND(run); BIND(unload_game);
+    BIND(get_system_info); BIND(set_environment); BIND(set_video_refresh);
+    BIND(set_audio_sample); BIND(set_audio_sample_batch); BIND(set_input_poll);
+    BIND(set_input_state); BIND(load_game);
+    return core.api_version() == RETRO_API_VERSION ? 0 : fail("Unsupported libretro API");
+}
+static long number(const char *value, long min, long max) {
+    char *end;
+    long n = strtol(value, &end, 10);
+    return *value && !*end && min <= n && n <= max ? n : -1;
+}
+int main(int argc, char **argv) {
+    if (argc != 4) return fail("Expected ROM byte count, warm-up frames and measured frames");
+    long bytes = number(argv[1], 192, 32 * 1024 * 1024);
+    long warmup = number(argv[2], 0, 1000000), frames = number(argv[3], 100, 1000000);
+    if (bytes < 0 || warmup < 0 || frames < 0) return fail("Invalid measurement parameters");
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    if (!QueryPerformanceFrequency(&frequency) || !QueryPerformanceCounter(&origin))
+        return fail("Performance clock unavailable");
+#endif
+    if (open_core()) return 1;
+    struct retro_system_info info = {0};
+    core.get_system_info(&info);
+    if (!info.library_name || strcmp(info.library_name, "mGBA") || info.need_fullpath)
+        return fail("Select an mGBA libretro core with in-memory ROM support");
+    const char *version = info.library_version;
+    if (!version || !*version || strlen(version) > 80 ||
+        strspn(version, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-+_ ") != strlen(version))
+        return fail("Invalid core version");
+    uint8_t *rom = malloc((size_t)bytes);
+    uint64_t *timings = calloc((size_t)frames, sizeof(*timings));
+    if (!rom || !timings || fread(rom, 1, (size_t)bytes, stdin) != (size_t)bytes)
+        return fail("Unable to read ROM into memory");
+    core.set_environment(environment);
+    core.set_video_refresh(video);
+    core.set_audio_sample(audio);
+    core.set_audio_sample_batch(audio_batch);
+    core.set_input_poll(poll_input);
+    core.set_input_state(input);
+    core.init();
+    struct retro_game_info game = { "workload.gba", rom, (size_t)bytes, NULL };
+    if (!core.load_game(&game)) return fail("mGBA could not load this ROM");
+    for (long i = 0; i < warmup; i++) core.run();
+    audio_frames = 0;
+    signature = 2166136261u;
+    uint64_t last = clock_ns();
+    for (long i = 0; i < frames; i++) {
+        renders = 0;
+        core.run();
+        uint64_t now = clock_ns();
+        if (bad_video || renders != 1 || now <= last)
+            return fail("Expected one completed software framebuffer per timed frame and a positive duration");
+        timings[i] = now - last;
+        last = now;
+    }
+    if (!audio_frames) return fail("Core emitted no audio samples");
+    printf("EB1\n%s\n%" PRIu64 "\n%016" PRIx64 "\n", version, audio_frames, signature);
+    for (long i = 0; i < frames; i++) printf("%" PRIu64 "\n", timings[i]);
+    core.unload_game();
+    core.deinit();
+    free(timings);
+    free(rom);
+    return 0;
+}

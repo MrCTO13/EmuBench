@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emubench"
+version = "0.1.0"
+requires-python = ">=3.10"
+description = "Measure uncapped, rendered GBA frames with mGBA"
+license = {file = "LICENSE"}
+
+[project.scripts]
+emubench = "emubench.cli:main"
+
+[tool.setuptools]
+packages = ["emubench"]
+
+[tool.setuptools.package-data]
+emubench = ["native/*.c", "native/*.h", "native/CMakeLists.txt"]

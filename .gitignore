@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+*.gba
+*.gb
+*.gbc
+*.sav
+*.bios
+*.spec
+results/

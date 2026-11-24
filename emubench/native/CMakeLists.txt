@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.15)
+project(EmuBench LANGUAGES C)
+add_executable(emubench-worker worker.c)
+target_compile_features(emubench-worker PRIVATE c_std_11)
+target_link_libraries(emubench-worker PRIVATE ${CMAKE_DL_LIBS})

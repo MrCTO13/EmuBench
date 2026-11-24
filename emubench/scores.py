@@ -1,4 +1,5 @@
 """Private frame traces and an explicit allowlist for public score submissions."""
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -118,7 +119,7 @@ def public_fields(result, title):
 def publish(public):
     directory = engines.home()
     directory.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(directory / "published.sqlite", timeout=60) as db:
+    with closing(sqlite3.connect(directory / "published.sqlite", timeout=60)) as db, db:
         db.execute("CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, url TEXT NOT NULL)")
         db.execute("BEGIN IMMEDIATE")
         seen = db.execute("SELECT url FROM receipts WHERE id=?", (public["run_id"],)).fetchone()

@@ -47,6 +47,15 @@ jobs:
           ./dist/emubench download --all
           ./dist/emubench run --latest-core --rom "$RUNNER_TEMP/sample.gba" --frames 120 --out "$RUNNER_TEMP/downloaded-core.json"
           python -c "import json,os,pathlib; r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'downloaded-core.json').read_text()); assert r['rendered_frames']==120 and r['sampled_frame_changes']>0"
+      - name: Measure matched SNES runs with both prebuilt cores
+        shell: bash
+        run: |
+          python tests/snes_workload.py "$RUNNER_TEMP/sample.sfc"
+          for emulator in snes9x bsnes; do
+            ./dist/emubench run --emulator "$emulator" --latest-core --rom "$RUNNER_TEMP/sample.sfc" --frames 300 --out "$RUNNER_TEMP/$emulator.json"
+            ./dist/emubench publish "$RUNNER_TEMP/$emulator.json" --preview
+          done
+          python -c "import json,os,pathlib; root=pathlib.Path(os.environ['RUNNER_TEMP']); a,b=[json.loads((root/(k+'.json')).read_text()) for k in ('snes9x','bsnes')]; assert all(r['rendered_frames']==300 and r['sampled_frame_changes']>200 for r in (a,b)); assert a['comparison_id']==b['comparison_id'] and a['worker_sha256']==b['worker_sha256'] and a['profile']==b['profile'] and a['core_sha256']!=b['core_sha256']"
       - name: Assemble distribution
         shell: bash
         run: |

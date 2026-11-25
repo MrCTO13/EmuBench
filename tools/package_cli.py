@@ -19,6 +19,7 @@ subprocess.run([sys.executable, "-m", "PyInstaller", "--onefile", "--clean", "--
                 "--paths", ".", "--name", "emubench",
                 "--add-data", "emubench/report.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/chart.js" + os.pathsep + "emubench",
+                "--add-data", "emubench/compare.js" + os.pathsep + "emubench",
                 "--add-binary", str(native) + os.pathsep + "emubench/native/bin", str(entry)], check=True)
 
 Path("dist/scores.html").write_text(template_html(), encoding="utf-8")

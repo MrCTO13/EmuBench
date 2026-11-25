@@ -21,6 +21,14 @@ def database():
         yield db
 
 
+def comparison_id(rom_hash):
+    # The public token links runs of one exact image in this device journal.
+    with database() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS workloads (hash TEXT PRIMARY KEY, token TEXT UNIQUE NOT NULL)")
+        db.execute("INSERT OR IGNORE INTO workloads VALUES (?,?)", (rom_hash, str(uuid.uuid4())))
+        return db.execute("SELECT token FROM workloads WHERE hash=?", (rom_hash,)).fetchone()[0]
+
+
 @contextmanager
 def attempt(rom, build, context="single run"):
     run_id, started = str(uuid.uuid4()), now()
@@ -40,7 +48,7 @@ def attempt(rom, build, context="single run"):
 def complete(result, location):
     with database() as db:
         db.execute("""UPDATE attempts SET finished=?,outcome='completed',build=?,result=?,avg=?,low=?,high=?
-                      WHERE id=?""", (result["finished_utc"], result["version"], str(location),
+                      WHERE id=?""", (result["finished_utc"], result["emulator"] + " " + result["version"], str(location),
                       result["average_fps"], result["low_1pct_fps"], result["high_1pct_fps"], result["id"]))
 
 
@@ -53,7 +61,7 @@ def history(game, limit):
         count = 0
         for start, end, name, version, outcome, context, location, error, avg, low, high in rows:
             count += 1
-            print(f"{start} .. {end or '?'}  {name}  mGBA {version}  {outcome}  ({context})")
+            print(f"{start} .. {end or '?'}  {name}  {version}  {outcome}  ({context})")
             if avg is not None:
                 print(f"  {avg:.0f} avg / {low:.0f} low / {high:.0f} high FPS")
             if location or error:

@@ -12,10 +12,23 @@ import tempfile
 import time
 import uuid
 
-from . import details, engines
+from . import details, engines, journal
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
+
+
+ADAPTERS = {"mgba": ("mGBA", PROFILE), "snes9x": ("Snes9x", "snes-boot-no-input-v1"),
+            "bsnes": ("bsnes", "snes-boot-no-input-v1")}
+
+
+def validate_file(rom, emulator):
+    if emulator == "mgba":
+        extensions, minimum = (".gba",), 192
+    else:
+        extensions, minimum = (".sfc", ".smc"), 32768
+    if rom.suffix.lower() not in extensions or not rom.is_file() or not minimum <= rom.stat().st_size <= 32 * 1024**2:
+        raise ValueError("Choose an unpacked " + " or ".join(extensions) + " cartridge image up to 32 MiB")
 
 
 def cpu_model():
@@ -52,20 +65,20 @@ class InterruptedWindow(InterruptedError):
     """The device became busy or another worker owns the measurement slot."""
 
 
-def run_worker(worker, core, data, warmup, frames, timeout, ready):
+def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator):
     engines.home().mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
            "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
     # File handles avoid pipe back-pressure while the parent watches idle state.
     with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryFile() as source, \
-         tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+         tempfile.TemporaryFile() as errors:
         source.write(data)
         source.seek(0)
         if ready and not ready():
             raise InterruptedWindow("Waiting for idle")
-        args = [worker, str(len(data)), str(warmup), str(frames)]
+        args = [worker, str(len(data)), str(warmup), str(frames), emulator]
         start = time.monotonic()
-        with subprocess.Popen(args, cwd=folder, env=env, stdin=source, stdout=output, stderr=errors) as proc:
+        with subprocess.Popen(args, cwd=folder, env=env, stdin=source, stdout=subprocess.DEVNULL, stderr=errors) as proc:
             try:
                 while True:
                     before_wait = time.time()
@@ -84,45 +97,49 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready):
                     raise InterruptedWindow("Another measurement is active on this device")
                 if proc.returncode:
                     errors.seek(0)
-                    raise ValueError(f"mGBA worker exited {proc.returncode}. "
+                    raise ValueError(f"{emulator} worker exited {proc.returncode}. "
                                      + errors.read(1000).decode(errors="replace").strip())
                 if ready and not ready():
                     raise InterruptedWindow("Device became busy during timing")
             finally:
                 if proc.poll() is None:
                     proc.kill()
-        output.seek(0)
-        return output.read().decode("ascii").splitlines()
+        return (Path(folder) / "frame-evidence").read_text(encoding="ascii").splitlines()
 
 
-def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_rom=None):
+def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_rom=None, emulator="mgba"):
     if not 100 <= frames <= 1_000_000 or not 0 <= warmup <= 1_000_000 or timeout <= 0:
         raise ValueError("Use 100–1,000,000 measured frames, 0–1,000,000 warm-up frames and a positive timeout")
-    if rom.suffix.lower() != ".gba" or not rom.is_file() or not 192 <= rom.stat().st_size <= 32 * 1024**2:
-        raise ValueError("Choose an unpacked .gba file (192 bytes to 32 MiB)")
+    name, profile = ADAPTERS[emulator]
+    validate_file(rom, emulator)
     data = rom.read_bytes()
     rom_hash = hashlib.sha256(data).hexdigest()
     if expected_rom is not None and expected_rom != rom_hash:
         raise ValueError("ROM changed since the campaign was created")
-    if data[3:4] != b"\xea":
+    if emulator == "mgba" and data[3:4] != b"\xea":
         raise ValueError("This file does not have the expected GBA cartridge header")
+    if emulator != "mgba" and len(data) % 32768 == 512:
+        data = data[512:]  # Strip the copier header before handing the cartridge to the core.
     if core:
         core = core.expanduser().resolve(strict=True)
         tag, commit = None, None
     else:
+        if emulator != "mgba":
+            raise ValueError("Select a SNES core using --latest-core or --core")
         core, meta = engines.install(requested or engines.REFERENCE)
         tag, commit = meta["tag"], meta["commit"]
     core_hash = engines.digest(core)
     worker = engines.worker()
-    output = run_worker(worker, core, data, warmup, frames, timeout, ready)
+    output = run_worker(worker, core, data, warmup, frames, timeout, ready, name)
     if len(output) != frames + 5 or output[0] != "EB2":
         raise ValueError("Incomplete frame evidence")
     version, audio, fingerprint, visual_changes = output[1:5]
     if tag and version != tag:
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
     times = list(map(int, output[5:]))
-    return {"schema": 1, "id": str(uuid.uuid4()), "profile": PROFILE,
-            "emulator": "mGBA", "version": version, "source_commit": commit,
+    return {"schema": 1, "id": str(uuid.uuid4()), "profile": profile,
+            "comparison_id": journal.comparison_id(rom_hash),
+            "emulator": name, "version": version, "source_commit": commit,
             "core_sha256": core_hash, "worker_sha256": engines.digest(worker),
             "rom_sha256": rom_hash,
             "system": platform.system(), "arch": platform.machine(), "cpu": cpu_model(),
@@ -154,7 +171,7 @@ def save(result, destination):
 
 
 def public_fields(result, title):
-    if result["schema"] != 1 or result["profile"] != PROFILE or result["emulator"] != "mGBA":
+    if result["schema"] != 1 or (result["emulator"], result["profile"]) not in ADAPTERS.values():
         raise ValueError("Unknown result format")
     if not isinstance(title, str) or not 1 <= len(title.strip()) <= 90 or any(
             not (c.isalnum() or c in " .,'’()+&!_-") for c in title):
@@ -174,8 +191,11 @@ def public_fields(result, title):
     cpu = result.get("cpu", "Unknown")
     if not isinstance(cpu, str) or not 1 <= len(cpu) <= 160 or not cpu.isprintable():
         raise ValueError("Invalid processor model")
-    return {"run_id": str(uuid.UUID(result["id"])), "game": title.strip(), "profile": PROFILE,
-            "emulator": "mGBA", "version": result["version"], "source_commit": result["source_commit"],
+    cohort = {}
+    if "comparison_id" in result:
+        cohort["comparison_id"] = str(uuid.UUID(result["comparison_id"]))
+    return {**cohort, "run_id": str(uuid.UUID(result["id"])), "game": title.strip(), "profile": result["profile"],
+            "emulator": result["emulator"], "version": result["version"], "source_commit": result["source_commit"],
             "core_sha256": result["core_sha256"], "worker_sha256": result["worker_sha256"],
             "os": result["system"], "arch": result["arch"], "cpu": cpu, "warmup_frames": result["warmup_frames"],
             "rendered_frames": n, **stats(result["frame_ns"]), "timing": details.timeline(result["frame_ns"])}
@@ -197,11 +217,11 @@ def publish(public):
                                                     "-f", "q=" + query], timeout=40))
         url = next((item["html_url"] for item in found["items"] if item["title"].startswith(prefix)), None)
         if not url:
-            body = (f"Personal GBA ROM · self-reported · {PROFILE}\n\n"
+            body = (f"Personal ROM · self-reported · {public['profile']}\n\n"
                     "| Average FPS | 1% low FPS | 1% high FPS |\n| ---: | ---: | ---: |\n"
                     f"| {public['average_fps']:.0f} | {public['low_1pct_fps']:.0f} | {public['high_1pct_fps']:.0f} |\n\n"
                     + "\x60\x60\x60json\n" + json.dumps(public, ensure_ascii=False, indent=2) + "\n\x60\x60\x60")
-            payload = {"title": f"{prefix} {public['game']} · mGBA {public['version']}", "body": body}
+            payload = {"title": f"{prefix} {public['game']} · {public['emulator']} {public['version']}", "body": body}
             response = subprocess.run(["gh", "api", "--method", "POST", f"repos/{REPOSITORY}/issues",
                                        "--input", "-"], input=json.dumps(payload).encode(), check=True,
                                       stdout=subprocess.PIPE, timeout=40)

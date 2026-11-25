@@ -21,6 +21,7 @@ def arguments(commands):
     new = actions.add_parser("create")
     new.add_argument("queue", type=Path)
     new.add_argument("--rom", type=Path, action="append", required=True)
+    new.add_argument("--emulator", choices=tuple(scores.ADAPTERS), default="mgba")
     build = new.add_mutually_exclusive_group()
     build.add_argument("--version", default=None)
     build.add_argument("--latest-core", action="store_true")
@@ -57,11 +58,12 @@ def create(args):
         raise FileExistsError("Queue already exists. Use campaign resume.")
     roms = []
     for path in dict.fromkeys(p.expanduser().resolve(strict=True) for p in args.rom):
-        if path.suffix.lower() != ".gba" or not path.is_file() or not 192 <= path.stat().st_size <= 32 * 1024**2:
-            raise ValueError(f"Invalid GBA ROM: {path.name}")
+        scores.validate_file(path, args.emulator)
         roms.append([str(path), engines.digest(path)])
-    if args.latest_core:
-        args.core = downloads.latest_core("mgba")
+    if args.emulator != "mgba" and args.version:
+        raise ValueError("For SNES select --core PATH or --latest-core")
+    if args.latest_core or (args.emulator != "mgba" and not args.core):
+        args.core = downloads.latest_core(args.emulator)
     if args.core:
         core = args.core.expanduser().resolve(strict=True)
         commit = None
@@ -69,7 +71,7 @@ def create(args):
         core, meta = engines.install(args.version or engines.REFERENCE)
         commit = meta["commit"]
     engines.worker()  # Finish compilation before making the queue eligible.
-    plan = dict(roms=roms, core=str(core), core_hash=engines.digest(core), commit=commit,
+    plan = dict(emulator=args.emulator, roms=roms, core=str(core), core_hash=engines.digest(core), commit=commit,
                 version=meta["tag"] if not args.core else None, warmup=args.warmup_frames, frames=args.frames, timeout=args.timeout, loop=args.loop,
                 days=args.days, idle_check=gate, dedicated=args.dedicated, idle_seconds=args.idle_seconds)
     dest = args.queue.expanduser().resolve()
@@ -165,7 +167,7 @@ def resume(db, path, plan):
                 try:
                     with journal.attempt(Path(rom), plan.get("version") or "local core", f"round {number}, job {job_id}") as (run_id, started):
                         result = scores.measure(Path(rom), None, core, plan["warmup"], plan["frames"],
-                                                plan["timeout"], lambda: time.time() < deadline and ready(), rom_hash)
+                                                plan["timeout"], lambda: time.time() < deadline and ready(), rom_hash, plan.get("emulator", "mgba"))
                         if result["core_sha256"] != plan["core_hash"]:
                             raise ValueError("Core changed during campaign")
                         result["source_commit"] = plan["commit"]

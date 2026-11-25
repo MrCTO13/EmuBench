@@ -29,20 +29,20 @@ def main(argv=None):
     for p in (versions, install):
         p.add_argument("emulator", type=downloads.emulator_id, choices=tuple(CATALOG), nargs="?", default="mgba")
     install.add_argument("--version", default=None, metavar="TAG|latest")
-    run = commands.add_parser("run", help="Measure a local GBA ROM")
-    run.add_argument("--rom", type=Path, help="Unpacked .gba file (prompt if omitted)")
-    run.add_argument("--emulator", choices=["mgba"], default="mgba")
+    run = commands.add_parser("run", help="Measure a local GBA or SNES ROM")
+    run.add_argument("--rom", type=Path, help="Unpacked .gba, .sfc or .smc file (prompt if omitted)")
+    run.add_argument("--emulator", choices=tuple(scores.ADAPTERS), default="mgba")
     build = run.add_mutually_exclusive_group()
     build.add_argument("--version", "--emulator-version", metavar="TAG|latest")
     build.add_argument("--latest-core", action="store_true", help="Download the current prebuilt core for this host")
-    build.add_argument("--core", type=Path, help="Installed mGBA libretro library")
+    build.add_argument("--core", type=Path, help="Installed libretro library for the selected emulator")
     run.add_argument("--warmup-frames", type=int, default=120)
     run.add_argument("--frames", type=int, default=1800)
     run.add_argument("--timeout", type=int, default=300, help="Worker timeout in seconds")
     run.add_argument("--out", type=Path, help="Private result JSON destination")
     publish = commands.add_parser("publish", help="Review and publish a score on GitHub")
     publish.add_argument("result", type=Path)
-    publish.add_argument("--game", default="Personal GBA ROM", help="Optional public display title")
+    publish.add_argument("--game", default="Personal ROM", help="Optional public display title")
     publish.add_argument("--preview", action="store_true", help="Print the public fields and exit offline")
     publish.add_argument("--yes", action="store_true", help="Approve public submission without a prompt")
     hist = commands.add_parser("history", help="Show this device's private run log")
@@ -67,7 +67,7 @@ def main(argv=None):
             journal.history(args.game, args.limit)
         elif args.command == "details":
             trace = json.loads(args.result.read_text(encoding="utf-8"))
-            public = scores.public_fields(trace, "Personal GBA ROM")
+            public = scores.public_fields(trace, "Personal ROM")
             print(details.write_report(trace, public, args.out))
         elif args.command == "versions":
             if args.emulator == "mgba":
@@ -82,16 +82,18 @@ def main(argv=None):
         elif args.command == "run":
             if not args.rom and not sys.stdin.isatty():
                 parser.error("supply --rom when running without a terminal")
-            rom = args.rom or Path(input("Path to your GBA ROM: ").strip().strip('"'))
-            if args.latest_core:
+            rom = args.rom or Path(input("Path to your ROM: ").strip().strip('"'))
+            if args.emulator != "mgba" and args.version:
+                raise ValueError("For this emulator choose --latest-core or --core PATH to a pinned build")
+            if args.latest_core or (args.emulator != "mgba" and not args.core):
                 args.core = downloads.latest_core(args.emulator)
             with journal.attempt(rom, str(args.core.name if args.core else args.version or engines.REFERENCE)) as (run_id, start):
                 result = scores.measure(rom.expanduser(), args.version, args.core, args.warmup_frames,
-                                        args.frames, args.timeout)
+                                        args.frames, args.timeout, emulator=args.emulator)
                 result.update(id=run_id, local_name=rom.name, started_utc=start, finished_utc=journal.now())
                 path = scores.save(result, args.out)
                 journal.complete(result, path)
-            print(f"mGBA {result['version']} · {result['rendered_frames']} rendered frames\n"
+            print(f"{result['emulator']} {result['version']} · {result['rendered_frames']} rendered frames\n"
                   f"Average FPS   {result['average_fps']:.0f}\n"
                   f"1% low FPS    {result['low_1pct_fps']:.0f}\n"
                   f"1% high FPS   {result['high_1pct_fps']:.0f}\nPrivate result: {path}")

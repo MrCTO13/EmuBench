@@ -25,11 +25,12 @@ def timeline(times):
 def template_html():
     root = Path(__file__).parent
     return (root / "report.html").read_text(encoding="utf-8").replace(
-        "/* CHART_JS */", (root / "chart.js").read_text(encoding="utf-8"))
+        "/* CHART_JS */", (root / "chart.js").read_text(encoding="utf-8")).replace(
+        "/* COMPARE_JS */", (root / "compare.js").read_text(encoding="utf-8"))
 
 
 def write_report(result, public, destination):
-    data = {**public, "game": result.get("local_name", "Personal GBA ROM"),
+    data = {**public, "game": result.get("local_name", "Personal ROM"),
             "when": result.get("started_utc", ""), "finished": result.get("finished_utc", "")}
     template = template_html()
     # Embedded JSON is data, including any locally supplied filename.

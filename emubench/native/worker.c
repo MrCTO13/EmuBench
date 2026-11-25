@@ -33,7 +33,7 @@ static struct {
 } core;
 static unsigned renders, pixel_bytes = 2;
 static uint64_t audio_frames, signature = 2166136261u;
-static bool bad_video, have_previous;
+static bool bad_video, have_previous, snes;
 static uint32_t previous_sample, visual_changes;
 #ifdef _WIN32
 static LARGE_INTEGER frequency, origin;
@@ -77,6 +77,10 @@ static uint64_t clock_ns(void) {
 }
 static bool environment(unsigned command, void *data) {
     switch (command) {
+    case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
+    case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
+        *(const char **)data = ".";
+        return true;
     case RETRO_ENVIRONMENT_GET_CAN_DUPE:
         *(bool *)data = false;
         return true;
@@ -92,6 +96,7 @@ static bool environment(unsigned command, void *data) {
         else if (!strcmp(var->key, "mgba_use_bios")) var->value = "OFF";
         else if (!strcmp(var->key, "mgba_skip_bios")) var->value = "ON";
         else if (!strcmp(var->key, "mgba_idle_optimization")) var->value = "Don't Remove";
+        else if (!strcmp(var->key, "bsnes_run_ahead_frames")) var->value = "OFF";
         else return false;
         return true;
     }
@@ -108,7 +113,9 @@ static bool environment(unsigned command, void *data) {
     }
 }
 static void video(const void *buffer, unsigned width, unsigned height, size_t pitch) {
-    if (!buffer || buffer == RETRO_HW_FRAME_BUFFER_VALID || width != 240 || height != 160 ||
+    bool valid_geometry = snes ? (width == 256 || width == 512) && height >= 200 && height <= 512
+                               : width == 240 && height == 160;
+    if (!buffer || buffer == RETRO_HW_FRAME_BUFFER_VALID || !valid_geometry ||
         pitch < width * pixel_bytes) {
         bad_video = true;
         return;
@@ -162,7 +169,7 @@ static long number(const char *value, long min, long max) {
     return *value && !*end && min <= n && n <= max ? n : -1;
 }
 int main(int argc, char **argv) {
-    if (argc != 4) return fail("Expected ROM byte count, warm-up frames and measured frames");
+    if (argc != 5) return fail("Expected ROM byte count, warm-up frames, measured frames and core name");
     long bytes = number(argv[1], 192, 32 * 1024 * 1024);
     long warmup = number(argv[2], 0, 1000000), frames = number(argv[3], 100, 1000000);
     if (bytes < 0 || warmup < 0 || frames < 0) return fail("Invalid measurement parameters");
@@ -176,8 +183,9 @@ int main(int argc, char **argv) {
     if (open_core()) return 1;
     struct retro_system_info info = {0};
     core.get_system_info(&info);
-    if (!info.library_name || strcmp(info.library_name, "mGBA") || info.need_fullpath)
-        return fail("Select an mGBA libretro core with in-memory ROM support");
+    snes = !strcmp(argv[4], "Snes9x") || !strcmp(argv[4], "bsnes");
+    if ((!snes && strcmp(argv[4], "mGBA")) || !info.library_name || strcmp(info.library_name, argv[4]))
+        return fail("Selected library does not identify as the requested emulator");
     const char *version = info.library_version;
     if (!version || !*version || strlen(version) > 80 ||
         strspn(version, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-+_ ") != strlen(version))
@@ -193,10 +201,18 @@ int main(int argc, char **argv) {
     core.set_input_poll(poll_input);
     core.set_input_state(input);
     core.init();
-    struct retro_game_info game = { "workload.gba", rom, (size_t)bytes, NULL };
-    if (!core.load_game(&game)) return fail("mGBA could not load this ROM");
+    struct retro_game_info game = { snes ? "workload.sfc" : "workload.gba", rom, (size_t)bytes, NULL };
+    if (info.need_fullpath) {
+        FILE *staged = fopen(game.path, "wb");
+        if (!staged || fwrite(rom, 1, (size_t)bytes, staged) != (size_t)bytes || fclose(staged))
+            return fail("Could not stage input for a full-path core");
+        game.data = NULL;
+        game.size = 0;
+    }
+    if (!core.load_game(&game)) return fail("Core could not load this ROM");
     for (long i = 0; i < warmup; i++) core.run();
     audio_frames = 0;
+    bad_video = false;
     visual_changes = 0;
     have_previous = false;
     signature = 2166136261u;
@@ -211,8 +227,11 @@ int main(int argc, char **argv) {
         last = now;
     }
     if (!audio_frames) return fail("Core emitted no audio samples");
-    printf("EB2\n%s\n%" PRIu64 "\n%016" PRIx64 "\n%" PRIu32 "\n", version, audio_frames, signature, visual_changes);
-    for (long i = 0; i < frames; i++) printf("%" PRIu64 "\n", timings[i]);
+    FILE *evidence = fopen("frame-evidence", "wb");
+    if (!evidence) return fail("Could not save measured frame times");
+    fprintf(evidence, "EB2\n%s\n%" PRIu64 "\n%016" PRIx64 "\n%" PRIu32 "\n", version, audio_frames, signature, visual_changes);
+    for (long i = 0; i < frames; i++) fprintf(evidence, "%" PRIu64 "\n", timings[i]);
+    if (fclose(evidence)) return fail("Incomplete frame evidence");
     core.unload_game();
     core.deinit();
     free(timings);

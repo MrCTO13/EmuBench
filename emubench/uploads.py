@@ -1,5 +1,6 @@
 """Per-device opt-in and a durable queue of public score summaries."""
 import json
+import platform
 import sqlite3
 import subprocess
 import sys
@@ -19,6 +20,18 @@ def enqueue(db, result, title):
         return
     db.execute("INSERT OR IGNORE INTO score_outbox(id,payload) VALUES (?,?)",
                (summary["run_id"], json.dumps(summary, separators=(",", ":"))))
+
+
+def record_scene_failure(run_id, campaign_id, scene, emulator, core_sha, worker_sha, exc):
+    reason = "timeout" if isinstance(exc, TimeoutError) else "checkpoint" if "checkpoint" in str(exc) else "measurement"
+    record = dict(run_id=run_id, campaign_id=campaign_id, device_id=journal.comparison_id("installation"),
+                  outcome="failed", reason=reason, game=scene.title, profile=scene.profile,
+                  emulator=scores.ADAPTERS[emulator][0], core_sha256=core_sha, worker_sha256=worker_sha,
+                  os=platform.system(), arch=platform.machine(), cpu=scores.cpu_model())
+    with journal.database() as db:
+        if destination_for(db)=="service" and db.execute("SELECT 1 FROM upload_settings WHERE enabled=1").fetchone():
+            db.execute("INSERT OR IGNORE INTO score_outbox VALUES(?,?)", (run_id, json.dumps(record)))
+    return reason
 
 
 def configure(enabled, destination="github"):

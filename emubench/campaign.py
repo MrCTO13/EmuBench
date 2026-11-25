@@ -287,6 +287,11 @@ def resume(db, path, plan):
                     status = "held" if attempts >= 3 else "pending"
                     db.execute("UPDATE jobs SET status=?,attempts=?,available=?,error=? WHERE id=?",
                                (status, attempts, now + 30 * attempts, str(exc)[:240], job_id))
+                    scene=circuit.PROFILES.get(workload.get("scene"))
+                    if status=="held" and scene and plan.get("campaign_id"):
+                        failure_id=str(uuid.uuid5(uuid.UUID(plan["campaign_id"]),f"held-{job_id}"))
+                        uploads.record_scene_failure(failure_id,plan["campaign_id"],scene,emulator,
+                                                     build["sha256"],plan["worker_sha256"],exc)
                     message = f"job {job_id}: {status} after attempt {attempts}"
             state(db, message)
         if message != last_message:

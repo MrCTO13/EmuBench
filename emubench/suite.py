@@ -1,6 +1,4 @@
 """Score all requested public scenes, preserving individual failures and cohort identity."""
-import json
-import platform
 import sys
 import uuid
 
@@ -48,13 +46,7 @@ def run(args, core, release):
             raise
         except (TimeoutError,ValueError) as exc:
             failed=True
-            reason="timeout" if isinstance(exc,TimeoutError) else "checkpoint" if "checkpoint" in str(exc) else "measurement"
-            record=dict(run_id=run_id,campaign_id=group,device_id=journal.comparison_id("installation"),outcome="failed",
-                        reason=reason,game=scene.title,profile=scene.profile,emulator=scores.ADAPTERS[args.emulator][0],
-                        core_sha256=digest,worker_sha256=worker,os=platform.system(),arch=platform.machine(),cpu=scores.cpu_model())
-            with journal.database() as db:
-                if uploads.destination_for(db)=="service" and db.execute("SELECT 1 FROM upload_settings WHERE enabled=1").fetchone():
-                    db.execute("INSERT OR IGNORE INTO score_outbox VALUES(?,?)",(run_id,json.dumps(record)))
+            reason=uploads.record_scene_failure(run_id,group,scene,args.emulator,digest,worker,exc)
             print(f"{scene.title} failed ({reason}): {exc}",file=sys.stderr)
         uploads.flush(limit=3)
     if uploads.enabled():

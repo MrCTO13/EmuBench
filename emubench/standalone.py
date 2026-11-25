@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import time
 import uuid
-from . import conditions, engines, journal, telemetry
+from . import conditions, engines, journal, telemetry, hardware
 
 
 @contextmanager
@@ -61,6 +61,7 @@ def run_series(measure, args):
             raise ValueError("Standalone workload changed between passes")
     report = repeats.summarize([r["elapsed_ns"] for r in runs], args.frames)
     data = runs[report["selected"]]
+    data["hardware"] = hardware.fingerprint()
     data["conditions"] = [r["conditions"] for r in runs]
     data["repeatability"] = report
     data["idle"] = max((r["idle"] for r in runs),key=lambda i:i["cpu_percent"])

@@ -19,7 +19,7 @@ export function validate(r) {
   }
   requireValue(fields(r,["run_id","game","profile","emulator","version","source_commit","core_sha256","worker_sha256",
     "os","arch","cpu","warmup_frames","rendered_frames","average_fps","low_1pct_fps","high_1pct_fps","timing",
-    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution","speed_x","video_mode","mode","frame_check","idle","repeatability","conditions"]));
+    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution","speed_x","video_mode","mode","frame_check","idle","repeatability","conditions","hardware"]));
   requireValue(Object.hasOwn(CORE_CONSOLES,r.emulator) && plain(r.run_id,36,UUID) && plain(r.game,90,TEXT));
   requireValue(["Darwin","Linux","Windows"].includes(r.os) && /^(arm64|aarch64|amd64|x86_64)$/i.test(r.arch));
   requireValue(plain(r.cpu,160,CPU) && plain(r.version,80,/^[a-zA-Z0-9 ()._+-]+$/) && SHA.test(r.core_sha256)
@@ -47,6 +47,13 @@ export function validate(r) {
   requireValue(Math.abs(r.average_fps-1000*r.rendered_frames/end)<=1);
   requireValue(fields(r.idle,["state","cpu_percent"]) && Number.isFinite(r.idle.cpu_percent)
     && r.idle.cpu_percent>=0 && r.idle.cpu_percent<=100 && r.idle.state===(r.idle.cpu_percent>=25?"busy":"idle"));
+  const hw=r.hardware, modelName=s=>plain(s,160,/^[^\u0000-\u001f\u007f]+$/u);
+  requireValue(fields(hw,["model","ram_bytes","os_build","physical_cores","core_types","gpu"])
+    && (hw.model===null || modelName(hw.model)) && modelName(hw.os_build) && integer(hw.ram_bytes,1,2**52)
+    && (hw.physical_cores===null || integer(hw.physical_cores,1,65536))
+    && hw.core_types && typeof hw.core_types==="object" && !Array.isArray(hw.core_types)
+    && Object.entries(hw.core_types).every(([k,n])=>plain(k,50,/^[a-zA-Z0-9 -]+$/) && integer(n,1,65536))
+    && Array.isArray(hw.gpu) && hw.gpu.length<=16 && hw.gpu.every(modelName));
   const sensor=s=>fields(s,["thermal_state","temperature_c","throttled","throttle_count","power_source","low_power"])
     && [null,"nominal","fair","serious","critical"].includes(s.thermal_state)
     && [null,"ac","battery"].includes(s.power_source) && [null,true,false].includes(s.low_power)

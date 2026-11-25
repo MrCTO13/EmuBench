@@ -26,7 +26,7 @@ async function envelope(value){
 const fetch=async(path,method='GET',value)=>method==="POST"?raw(path,method,await envelope(value),headers):raw(path);
 const id=randomUUID(),device=(await hash(publicBytes)).slice(0,32).match(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/).slice(1).join("-"),campaign=randomUUID(),token=randomUUID();
 const sensor={thermal_state:null,temperature_c:null,power_source:null,low_power:null,throttled:null,throttle_count:null};
-const score={conditions:Array.from({length:3},()=>({before:sensor,after:sensor})),run_id:id,device_id:device,campaign_id:campaign,comparison_id:token,game:'Test public title',profile:'snes-boot-no-input-v1',emulator:'Snes9x',version:'1.63',source_commit:null,
+const score={hardware:{model:'Test host',ram_bytes:8589934592,os_build:'12345',physical_cores:8,core_types:{Performance:4,Efficiency:4},gpu:['Test GPU']},conditions:Array.from({length:3},()=>({before:sensor,after:sensor})),run_id:id,device_id:device,campaign_id:campaign,comparison_id:token,game:'Test public title',profile:'snes-boot-no-input-v1',emulator:'Snes9x',version:'1.63',source_commit:null,
  core_sha256:'a'.repeat(64),worker_sha256:'b'.repeat(64),os:'Windows',arch:'ARM64',cpu:'Example CPU',rendered_frames:100,warmup_frames:120,average_fps:100,low_1pct_fps:100,high_1pct_fps:100,
  repeatability:{elapsed_ns:[1e9,1e9,1e9],selected:0,relative_spread:0,accepted:true},idle:{cpu_percent:0,state:'idle'},frame_check:{method:'full-fnv64-17',samples:6,changes:5,signature:'0000000001234567'},mode:'libretro',video_mode:{region:'NTSC',source:'emulator-av',refresh_hz:60.0988},speed_x:100/60.0988,
  timing:[{start_ms:0,end_ms:1000,avg_fps:100,worst_fps:100,worst_ms:10,worst_frame:1,worst_at_ms:10}]};

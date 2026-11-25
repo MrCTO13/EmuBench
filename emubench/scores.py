@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 
-from . import adapters, carter, circuit, conditions, telemetry, details, engines, identify, journal, library
+from . import adapters, carter, circuit, conditions, telemetry, hardware, details, engines, identify, journal, library
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
@@ -147,6 +147,7 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
             runs.append(run)
     report = repeats.summarize([sum(r["frame_ns"]) for r in runs], frames)
     selected = runs[report["selected"]]
+    selected["hardware"] = hardware.fingerprint()
     selected["conditions"] = [r["conditions"] for r in runs]
     selected["repeatability"] = report
     selected["idle"] = max((r["idle"] for r in runs), key=lambda i:i["cpu_percent"])
@@ -315,6 +316,8 @@ def public_fields(result, title):
     cohort = {"edition":edition["edition"]} if edition else {}
     if "video_mode" in result:
         cohort.update(mode="libretro",video_mode=result["video_mode"], speed_x=speed(result["frame_ns"], result["video_mode"]))
+    if "hardware" in result:
+        cohort["hardware"] = result["hardware"]
     if "conditions" in result:
         cohort["conditions"] = result["conditions"]
     if "repeatability" in result:

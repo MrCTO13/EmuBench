@@ -29,6 +29,19 @@ def main():
             assert completed.returncode == expected, (completed.stdout, completed.stderr)
             return completed.stdout
 
+        # A local core with the packaged worker can create a queue before the device
+        # data directory exists. Verify the first resume, including a pre-folder plan.
+        legacy = work/"legacy.sqlite"
+        cli("campaign","create",legacy,"--rom",rom,"--core",core,"--frames","120","--dedicated")
+        with closing(sqlite3.connect(legacy)) as db, db:
+            plan = json.loads(db.execute("SELECT plan FROM campaign").fetchone()[0])
+            build = plan.pop("cores")["mgba"]
+            jobs = plan.pop("workloads")
+            plan.update(roms=[[job["path"],job["sha256"]] for job in jobs], core=build["path"],
+                        core_hash=build["sha256"], commit=build["commit"], version=build["tag"], emulator="mgba")
+            db.execute("UPDATE campaign SET plan=?", (json.dumps(plan),))
+        cli("campaign","resume",legacy)
+        assert "done: 1" in cli("campaign","status",legacy)
         assert "off" in cli("uploads","status")
         cli("uploads","enable")
         cli("run","--rom",rom.name,"--core",core,"--frames","120","--game","Public Game")
@@ -44,7 +57,7 @@ def main():
             assert {r["game"] for r in payloads} == {"Public Game", "Personal ROM"}
             assert all(r["rendered_frames"] == 120 and "frame_ns" not in r for r in payloads)
             assert rom.name not in json.dumps(payloads) and str(work) not in json.dumps(payloads)
-            assert db.execute("SELECT count(*) FROM attempts WHERE outcome='completed'").fetchone()[0] == 2
+            assert db.execute("SELECT count(*) FROM attempts WHERE outcome='completed'").fetchone()[0] == 3
         assert "0 queued" in cli("uploads","disable")
         print("Local paths, public names, offline recovery, resumed campaigns and disable verified.")
 

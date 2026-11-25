@@ -158,6 +158,7 @@ def state(db, message):
 
 
 def resume(db, path, plan):
+    engines.home().mkdir(parents=True, exist_ok=True)
     if "workloads" not in plan:
         # Preserve job indices, pinned builds and Carter scene identity in v0.4 and older queues.
         emulator = plan.get("emulator", "mgba")

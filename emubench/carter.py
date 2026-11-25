@@ -1,31 +1,25 @@
 """Versioned controller-only scenes for two exact Carter homebrew releases."""
 from dataclasses import dataclass
-import base64
-import json
-import re
+import hashlib
 from pathlib import Path
-import os
 import struct
-import subprocess
-import tempfile
+from urllib.error import URLError
 
-from . import engines, video
+from . import downloads, engines, video
 
 
 @dataclass(frozen=True)
 class Cartridge:
     title: str
     digest: str
-    repository: str
-    commit: str
     filename: str
 
 
 GAMES = {
     "gba": Cartridge("Cartervania", "817d58c35906a283d70bb220d05b18159b6473feb2bb74f1bb4e381f8b10de4e",
-                     "cartervania-gba", "f116d2e527a05b937bf180470d7b20b0ac3d78f0", "Carts-Cartervania-GBA.gba"),
+                     "Carts-Cartervania-GBA.gba"),
     "snes": Cartridge("Super Carter Bros. 3", "01e6f240178965f9d149e65ffeb8197bf460e9b9a6128467f4b012ff3d075ec9",
-                      "super-carter-bros-3-snes", "75f5ebe435755930a685cdf79a828773eb6dbb4f", "Super-Carter-Bros-3.sfc"),
+                      "Super-Carter-Bros-3.sfc"),
 }
 # Durations are console video frames. Masks use the standard libretro joypad IDs.
 GBA_OPEN = ((180,0),(4,256),(20,0),(4,8),(80,0))
@@ -80,25 +74,21 @@ def cartridge(console, supplied):
     path = directory / game.filename
     if path.is_file() and engines.digest(path) == game.digest:
         return path
-    endpoint = f"repos/MrCTO13/{game.repository}/contents/dist/{game.filename}?ref={game.commit}"
-    with tempfile.TemporaryDirectory(dir=directory) as folder:
-        staged = Path(folder) / game.filename
-        try:
-            # Some gh versions filter binary stdout. The blobs endpoint transports base64 losslessly.
-            blob = subprocess.check_output(["gh","api",endpoint,"--jq",".sha"],stderr=subprocess.PIPE,timeout=45).decode().strip()
-            if not re.fullmatch("[0-9a-f]{40}",blob):
-                raise ValueError("Invalid upstream cartridge identity")
-            data = json.loads(subprocess.check_output(["gh","api",f"repos/MrCTO13/{game.repository}/git/blobs/{blob}"],
-                                                      stderr=subprocess.PIPE,timeout=120))
-            if data["encoding"] != "base64" or not 0 < data["size"] <= 8*1024**2:
-                raise ValueError("Invalid upstream cartridge format")
-            staged.write_bytes(base64.b64decode("".join(data["content"].split()),validate=True))
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise ValueError(f"Supply --rom with the pinned {game.title} file, or sign in to gh with access to its game repository") from exc
-        if engines.digest(staged) != game.digest:
-            raise ValueError("The upstream Carter cartridge failed its SHA-256 check")
-        os.replace(staged,path)
+    url = f"https://github.com/MrCTO13/EmuBench/releases/download/carter-games-v1/{game.filename}"
+    try:
+        fetch_asset(url, game.digest, path)
+    except (OSError, URLError) as exc:
+        raise ValueError(f"Public asset unavailable for {game.title}. Use --rom for the pinned edition, "
+                         "or run the source-built Carter Circuit using emubench suite.") from exc
     return path
+
+
+def fetch_asset(url, digest, path):
+    from .accuracy import atomic_write
+    payload = downloads.fetch_bytes(url, 8*1024**2)
+    if hashlib.sha256(payload).hexdigest() != digest:
+        raise ValueError("Public release asset failed its pinned SHA-256 check")
+    atomic_write(path,payload)
 
 
 # Paired start/end raster digests, observed in software. SNES cores use different color conversion.

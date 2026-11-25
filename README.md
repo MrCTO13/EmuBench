@@ -130,7 +130,7 @@ On Windows, Task Scheduler can invoke the same “campaign resume” command at 
     emubench campaign create carter.sqlite --emulator mgba --carter all --loop --days 7
     emubench campaign resume carter.sqlite
 
-With no ROM path, Carter mode uses the verified cached original or fetches the exact build from the game's private GitHub repository using your authenticated GitHub CLI. Locally supplied cartridges must match the pinned edition. The open-source CLI and its release archives contain only the runner, replay definitions and reference digests. Public upstream diagnostics work independently of Carter access.
+With no ROM path, Carter mode verifies its cache and otherwise requests the exact game from the public EmuBench carter-games-v1 release. Both original homebrew files are available from the [Carter games release](https://github.com/MrCTO13/EmuBench/releases/tag/carter-games-v1). You can also supply the pinned file with --rom or run the source-built Carter Circuit using emubench suite. The downloader uses anonymous HTTPS and verifies SHA-256 before installation. Locally supplied cartridges must match the pinned edition. The open-source CLI and its release archives contain only the runner, replay definitions and reference digests. Public upstream diagnostics work independently of Carter access.
 
 | Console and game | Easy | Normal | Hard |
 |---|---|---|---|

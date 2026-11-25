@@ -7,7 +7,7 @@ function demoRows() {
     rows.push({run_id:"00000000-0000-4000-8000-"+id,device_id:"demo-"+machine,comparison_id:edition||profile,edition,
       game,profile,emulator,version,cpu:machine===1?"Example Apple silicon":"Example x86-64 PC",os:machine===1?"Darwin":"Windows",
       arch:machine===1?"arm64":"AMD64",core_sha256:bytes.repeat(64),worker_sha256:String(machine).repeat(64),source_commit:bytes.repeat(40),
-      video_mode:{region:profile.startsWith('gba')?'handheld':'NTSC',refresh_hz:profile.startsWith('gba')?4194304/70224:60.0988},speed_x:avg/(profile.startsWith('gba')?4194304/70224:60.0988),average_fps:avg,low_1pct_fps:Math.round(avg*.72),high_1pct_fps:Math.round(avg*1.18),rendered_frames:n,warmup_frames:120,
+      video_mode:{region:profile.startsWith('gba')?'handheld':'NTSC',refresh_hz:profile.startsWith('gba')?4194304/70224:60.0988},speed_x:avg/(profile.startsWith('gba')?4194304/70224:60.0988),idle:{state:'idle',cpu_percent:6},average_fps:avg,low_1pct_fps:Math.round(avg*.72),high_1pct_fps:Math.round(avg*1.18),rendered_frames:n,warmup_frames:120,
       received:1740787200+rows.length*1800,timing:Array.from({length:16},(_,i)=>({start_ms:elapsed*i/16,end_ms:elapsed*(i+1)/16,
         avg_fps:Math.round(avg*(.98+.075*Math.sin(i)-.20*(i===8))),worst_fps:Math.round(avg*(i===8?.4:.78)),
         worst_ms:1000/(avg*.60),worst_frame:1+i*Math.floor(n/16),worst_at_ms:elapsed*(i+.5)/16}))});

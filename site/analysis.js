@@ -29,7 +29,7 @@ function ranking(rows,baseline,challenger) {
       const part=runs.filter(r=>r.profile==="snes-circuit-"+level+"-v2");
       if(part.some(r=>r.outcome==="failed"))break;
       const a=part.filter(r=>build(r)===baseline), b=part.filter(r=>build(r)===challenger);
-      if(!a.length||!b.length||![...a,...b].every(r=>r.speed_x>0))break;
+      if(!a.length||!b.length||[...a,...b].some(r=>r.idle?.state!=="idle")||![...a,...b].every(r=>r.speed_x>0))break;
       ratios.push(median(b.map(r=>r.speed_x))/median(a.map(r=>r.speed_x)));links.push(...a,...b);
     }
     if(ratios.length===3){

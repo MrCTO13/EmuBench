@@ -67,6 +67,8 @@ def review(study, plan, jobs):
         game=result.get("catalog_match",{}).get("edition")
         if game not in games:
             continue
+        if result.get("idle",{}).get("state")=="busy":
+            raise ValueError("Busy host in lab campaign")
         public=scores.public_fields(result,"Personal ROM")
         peer=public["emulator"]
         if (eligible.get(peer)!=public["core_sha256"] or public.get("campaign_id")!=plan["campaign_id"] or

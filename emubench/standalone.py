@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import time
 import uuid
-from . import engines, journal
+from . import conditions, engines, journal
 
 
 @contextmanager
@@ -34,19 +34,20 @@ def slot():
 
 def timed(command, directory, timeout):
     with slot():
+        idle = conditions.idle()
         start = time.perf_counter_ns()
         output = subprocess.run(command, cwd=directory, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout)
         elapsed = time.perf_counter_ns() - start
     if output.returncode or elapsed <= 0:
         raise ValueError("The selected standalone runner did not complete the workload")
-    return output, elapsed
+    return output, elapsed, idle
 
 
-def receipt(emulator, version, digest, frames, elapsed, hz, checkpoints):
+def receipt(emulator, version, digest, frames, elapsed, hz, checkpoints, idle):
     fps = 1e9 * frames / elapsed
     data = dict(id=str(uuid.uuid4()), finished_utc=journal.now(), emulator=emulator, version=version,
                 mode="standalone-process-v1", runner_sha256=digest, frames=frames, elapsed_ns=elapsed,
-                refresh_hz=hz, average_fps=round(fps), speed_x=fps/hz, render_checkpoints=checkpoints)
+                idle=idle, refresh_hz=hz, average_fps=round(fps), speed_x=fps/hz, render_checkpoints=checkpoints)
     dest = engines.home() / "standalone" / (data["id"]+".json")
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("x", encoding="utf-8") as f:
@@ -79,9 +80,9 @@ def mgba(args):
         if not match:
             raise ValueError("The program did not identify its upstream mGBA version")
         digest = engines.digest(runner)
-        output, elapsed = timed([runner, "-P", "-s", "0", "-C", "useBios=0", "-C", "idleOptimization=ignore",
+        output, elapsed, idle = timed([runner, "-P", "-s", "0", "-C", "useBios=0", "-C", "idleOptimization=ignore",
                                  "-F", str(args.frames), game], root, args.timeout)
         rows = list(csv.DictReader(io.StringIO(output.stdout.decode())))
         if len(rows)!=1 or rows[0].get("renderer")!="software" or int(rows[0]["frames"])!=args.frames:
             raise ValueError("mGBA did not confirm software rendering for the requested frames")
-        return receipt("mGBA",match[1],digest,args.frames,elapsed,4194304/70224,None)
+        return receipt("mGBA",match[1],digest,args.frames,elapsed,4194304/70224,None,idle)

@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 
-from . import adapters, carter, circuit, details, engines, identify, journal, library
+from . import adapters, carter, circuit, conditions, details, engines, identify, journal, library
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
@@ -169,12 +169,13 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     worker,translated = engines.timing_worker(core)
     worker_hash = engines.digest(worker)
     video_mode = {}
+    idle = conditions.idle()
     output, checkpoints = run_worker(worker, core, data, warmup, frames, timeout, ready, name,
                                      scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,
                                      external=external, expected_digest=rom_hash, video_mode=video_mode)
     if core_hash != engines.digest(core) or worker_hash != engines.digest(worker):
         raise ValueError("Core or timing worker changed during measurement")
-    scene_evidence = {}
+    scene_evidence = {'idle':idle}
     if not scene and console in identify.CATALOGS:
         edition = identify.match(console, data)
         if edition:
@@ -296,6 +297,8 @@ def public_fields(result, title):
     cohort = {"edition":edition["edition"]} if edition else {}
     if "video_mode" in result:
         cohort.update(mode="libretro",video_mode=result["video_mode"], speed_x=speed(result["frame_ns"], result["video_mode"]))
+    if "idle" in result:
+        cohort["idle"] = result["idle"]
     if "frame_check" in result:
         cohort["frame_check"] = result["frame_check"]
     if "attestation" in result:

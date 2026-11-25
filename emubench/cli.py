@@ -15,7 +15,7 @@ from zipfile import BadZipFile
 def main(argv=None):
     if not (sys.argv[1:] if argv is None else argv):
         return desktop.launch()
-    parser = argparse.ArgumentParser(prog="emubench", description="Emu Bench presented by Carts")
+    parser = argparse.ArgumentParser(prog="emubench", description="EmuBench")
     parser.add_argument("--version", action="version", version="Emu Bench 0.7.0")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("desktop", help="Open the local desktop launcher")

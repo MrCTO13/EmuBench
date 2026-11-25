@@ -1,6 +1,6 @@
 # Emu Bench
 
-Presented by Carts. A local-first command-line benchmark for macOS, Windows and Linux. It measures rendered frames from boot with neutral input for mGBA (Game Boy Advance) and Snes9x, bsnes and a locally supplied CartsSNES core (Super NES).
+A local-first command-line benchmark for macOS, Windows and Linux. It measures rendered frames from boot with neutral input for mGBA (Game Boy Advance) and Snes9x, bsnes and a locally supplied CartsSNES core (Super NES).
 
 ## Run the public suite
 

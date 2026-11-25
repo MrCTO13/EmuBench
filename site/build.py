@@ -11,8 +11,7 @@ out = Path(sys.argv[1])
 profiles = {s.profile: dict(console=s.console, title=s.title, description=s.description, warmup=s.warmup,
                             frames=m.FRAMES, references=s.references) for m in (carter, circuit) for s in m.SCENES}
 page = (root / "index.html").read_text()
-for tag, name in (("__EMU__", "emu-bench-wordmark"), ("__CARTS__", "carts-wordmark")):
-    page = page.replace(tag, (root / "assets" / (name + ".svg")).read_text())
+page = page.replace("__EMU__", (root / "assets/emu-bench-wordmark.svg").read_text())
 registry = {"studies":lab.studies(),"receipts":[]}
 for path in sorted((root/"reviewed").glob("*.json")):
     receipt=json.loads(path.read_text())

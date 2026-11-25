@@ -40,7 +40,11 @@ def main():
             wait(ready,45)
         finally:
             gui.terminate()
-            gui.wait(timeout=20)
+            try:
+                gui.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                gui.kill()
+                gui.wait(timeout=10)
         root=tk.Tk()
         window=Desktop(root,[str(engine)])
         assert window.workload.get()==next(iter(WORKLOADS))

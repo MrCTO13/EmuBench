@@ -79,19 +79,23 @@ class Desktop:
         self.metrics = [tk.StringVar(value="—") for _ in range(4)]
         self.accuracy = tk.StringVar(value="Run a benchmark to see its score.")
         root.title("EmuBench")
-        root.geometry("900x715")
-        root.minsize(700, 640)
+        root.geometry("960x600")
+        root.minsize(780, 560)
         root.configure(background=PAPER)
         root.protocol("WM_DELETE_WINDOW", self.close)
-        if os.name == "nt":
-            icon = Path(__file__).with_name("assets") / "emubench.png"
-            if icon.is_file():
-                self.icon = tk.PhotoImage(file=icon)
-                root.iconphoto(True, self.icon)
+        icon=Path(__file__).with_name("assets")/"emubench.png"
+        self.icon=tk.PhotoImage(file=icon) if icon.is_file() else None
+        if self.icon and os.name=="nt":
+            root.iconphoto(True,self.icon)
+        if sys.platform=="darwin":
+            root.createcommand("tk::mac::Quit",self.close)
         self.styles()
         self.layout()
         self.workload_changed()
         self.refresh_history()
+        previous=next((r for r in self.rows.values() if r[5]=="completed" and r[6]),None)
+        if previous:
+            self.display_score(previous)
         self.poll_id = root.after(120, self.poll)
 
     def styles(self):
@@ -110,7 +114,8 @@ class Desktop:
         style.map("Run.TButton", background=[("disabled", "#68798a"), ("active", "#103b87")], foreground=[("disabled", "white")])
         style.configure("TCombobox", padding=4, fieldbackground="white")
         style.map("TCombobox", fieldbackground=[("readonly", "white")], foreground=[("readonly", INK)])
-        style.configure("TNotebook.Tab", padding=(16, 8))
+        style.configure("TNotebook", borderwidth=0, background=PAPER)
+        style.configure("TNotebook.Tab", padding=(16, 8), borderwidth=0)
         style.map("TNotebook.Tab", background=[("selected", PAPER)], foreground=[("selected", BLUE)])
         style.configure("Treeview", rowheight=29, fieldbackground="white", background="white")
         style.configure("Treeview.Heading", font=(family, 10, "bold"), padding=5)
@@ -118,16 +123,24 @@ class Desktop:
     def layout(self):
         mast = tk.Frame(self.root, bg=INK)
         mast.pack(fill="x")
+        if self.icon:
+            self.mark=self.icon.subsample(3)
+            tk.Label(mast,image=self.mark,background=INK).pack(side="left",padx=(20,0),pady=8)
         tk.Label(mast, text="EmuBench", foreground="white", background=INK,
-                 font=("Helvetica", 23, "bold")).pack(side="left", padx=22, pady=11)
+                 font=("Helvetica", 23, "bold")).pack(side="left", padx=10, pady=11)
         tk.Label(mast, text=catalog.host_target().replace("macos", "macOS").replace("windows", "Windows").replace("-", "  ·  "),
                  background=INK, foreground="#d4e4ff").pack(side="right", padx=22)
         self.tabs = ttk.Notebook(self.root)
         self.tabs.pack(fill="both", expand=True, padx=16, pady=12)
-        self.setup = ttk.Frame(self.tabs, padding=(16, 12))
+        bench=ttk.Frame(self.tabs,padding=(10,16))
+        bench.columnconfigure(0,weight=5)
+        bench.columnconfigure(1,weight=3)
+        bench.rowconfigure(0,weight=1)
+        self.setup=ttk.Frame(bench,padding=(4,0,18,0))
+        self.setup.grid(row=0,column=0,sticky="nsew")
         history = ttk.Frame(self.tabs, padding=12)
         activity = ttk.Frame(self.tabs, padding=12)
-        for frame, label in [(self.setup, "Benchmark"), (history, "History"), (activity, "Run log")]:
+        for frame, label in [(bench, "Benchmark"), (history, "History"), (activity, "Run log")]:
             self.tabs.add(frame, text=label)
         self.setup.columnconfigure(1, weight=1)
         ttk.Label(self.setup, text="Run a benchmark", style="Title.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 7))
@@ -140,22 +153,27 @@ class Desktop:
         self.versionrow = self.field("Release", ttk.Entry(self.setup, textvariable=self.version), 7)
         self.reserve = ttk.Checkbutton(self.setup, text="This computer is reserved for the folder run", variable=self.reserved)
         self.reserve.grid(row=8, column=1, columnspan=2, sticky="w")
-        ttk.Label(self.setup, textvariable=self.help, style="Muted.TLabel", wraplength=550).grid(row=9, column=0, columnspan=3, sticky="w", pady=(6, 9))
+        ttk.Label(self.setup, textvariable=self.help, style="Muted.TLabel", wraplength=385).grid(row=9, column=0, columnspan=3, sticky="w", pady=(6, 9))
         actions = ttk.Frame(self.setup)
         actions.grid(row=10, column=0, columnspan=3, sticky="ew")
         self.run_button = ttk.Button(actions, text="Run benchmark", style="Run.TButton", command=self.start)
         self.run_button.pack(side="left")
         self.stop_button = ttk.Button(actions, text="Stop", command=self.stop, state="disabled")
         self.stop_button.pack(side="left", padx=6)
-        ttk.Label(actions, textvariable=self.status, style="Muted.TLabel", wraplength=330).pack(side="left", padx=6)
-        ttk.Separator(self.setup).grid(row=11, column=0, columnspan=3, sticky="ew", pady=14)
-        stats = ttk.Frame(self.setup)
-        stats.grid(row=12, column=0, columnspan=3, sticky="ew")
-        for i, label in enumerate(["Console speed", "Average FPS", "1% low FPS", "1% high FPS"]):
-            stats.columnconfigure(i, weight=1, uniform="metrics")
-            ttk.Label(stats, text=label, style="Muted.TLabel").grid(row=0, column=i, sticky="w")
-            ttk.Label(stats, textvariable=self.metrics[i], style="Score.TLabel").grid(row=1, column=i, sticky="w")
-        ttk.Label(self.setup, textvariable=self.accuracy, style="Muted.TLabel", wraplength=600).grid(row=13, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        ttk.Label(self.setup, textvariable=self.status, style="Muted.TLabel", wraplength=360).grid(row=11,column=0,columnspan=3,sticky="w",pady=8)
+        panel=tk.Frame(bench,bg=INK,padx=20,pady=18)
+        panel.grid(row=0,column=1,sticky="nsew")
+        panel.columnconfigure((0,1),weight=1,uniform="scores")
+        tk.Label(panel,text="Latest score",bg=INK,fg="white",font=("Helvetica",18,"bold")).grid(row=0,column=0,columnspan=2,sticky="w")
+        tk.Frame(panel,bg="#ffd673",height=3,width=32).grid(row=1,column=0,sticky="w",pady=(8,16))
+        for i,label in enumerate(["Console speed","Average FPS","1% low FPS","1% high FPS"]):
+            line,col=divmod(i,2)
+            tk.Label(panel,text=label,bg=INK,fg="#cadcf1",font=("Helvetica",10)).grid(row=2+line*2,column=col,sticky="w",padx=(0,8))
+            tk.Label(panel,textvariable=self.metrics[i],bg=INK,fg="#ffe59c" if i==0 else "white",
+                     font=("Helvetica",22,"bold")).grid(row=3+line*2,column=col,sticky="w",pady=(1,14))
+        tk.Label(panel,textvariable=self.accuracy,bg=INK,fg="#e8f0f7",justify="left",anchor="nw",
+                 wraplength=220).grid(row=6,column=0,columnspan=2,sticky="nw",pady=8)
+        panel.rowconfigure(7,weight=1)
         self.history = ttk.Treeview(history, columns=("date", "game", "build", "fps", "outcome"), show="headings", selectmode="browse")
         for key, label, width in [("date","Local time",122),("game","Game / scene",200),("build","Emulator",116),("fps","Avg FPS",64),("outcome","Outcome",96)]:
             self.history.heading(key, text=label)
@@ -431,12 +449,18 @@ class Desktop:
         if show_score:
             complete=next((r for r in records if r[5]=="completed" and r[6] and r[0] not in self.before),None)
             if complete:
-                _,context,game,build,_,_,_,avg,low,high,speed,accuracy=complete
-                for el,val in zip(self.metrics,[f"{speed:.2f}×" if speed is not None else "—",*[f"{v:.0f}" if v is not None else "—" for v in (avg,low,high)]]):
-                    el.set(val)
-                self.accuracy.set(f"{context if context and context!='single run' else game}  ·  {build}  ·  {accuracy or 'Accuracy untested'}")
+                self.display_score(complete)
             else:
                 self.accuracy.set("No new completed scores. See History and Run log.")
+
+    def display_score(self,record):
+        _,context,game,build,_,_,_,avg,low,high,speed,accuracy=record
+        values=[f"{speed:.2f}×" if speed is not None else "—"]
+        values.extend(f"{v:.0f}" if v is not None else "—" for v in (avg,low,high))
+        for field,value in zip(self.metrics,values):
+            field.set(value)
+        title=context if context and context!="single run" else game
+        self.accuracy.set(f"{title}  ·  {build}  ·  {accuracy or 'Accuracy untested'}")
 
     def selected_result(self):
         selection=self.history.selection()
@@ -478,7 +502,9 @@ class Desktop:
 
 def main():
     root=tk.Tk()
-    Desktop(root)
+    app=Desktop(root)
+    if sys.platform=="darwin":
+        signal.signal(signal.SIGTERM,lambda *_: root.after_idle(app.close))
     root.mainloop()
 
 

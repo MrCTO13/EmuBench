@@ -171,6 +171,13 @@ export default {async fetch(request,env) {
     const row=await db.prepare("SELECT received,payload FROM runs WHERE id=?").bind(path.slice(9)).first();
     return row?json({...JSON.parse(row.payload),received:row.received}):json({error:"Score not found"},404);
   }
+  if(path.startsWith("/assets/")) {
+    const name=path.slice(8);
+    if(Object.hasOwn(ASSETS,name)) {
+      const type=name.endsWith(".png")?"image/png":name.endsWith(".ttf")?"font/ttf":"text/plain";
+      return new Response(Uint8Array.from(atob(ASSETS[name]),c=>c.charCodeAt(0)),{headers:{"content-type":type}});
+    }
+  }
   if(path==="/client.js")return new Response(CLIENT,{headers:{"content-type":"text/javascript; charset=utf-8"}});
   if(path==="/"||["/compare","/rankings","/history","/library","/method"].includes(path)||/^\/(run|campaign)\/[a-f0-9-]{36}$/.test(path))
     return new Response(PAGE,{headers:{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'","referrer-policy":"no-referrer"}});

@@ -3,38 +3,77 @@ const route=location.pathname.split("/")[1]||"browse", params=new URLSearchParam
 const demo=params.get("demo")==="1";
 function localUrl(path){return demo?path+(path.includes("?")?"&":"?")+"demo=1":path;}
 if(demo){
-  const note=document.createElement("p");note.className="demo";note.append("Example data · Fictional FPS for exploring the browser. ");
-  const live=document.createElement("a");live.textContent="View published scores";live.href="/";note.append(live);title.before(note);
+  const note=document.createElement("p");note.className="demo";note.append("Example scores are fictional. ");
+  const live=document.createElement("a");live.textContent="View published scores";live.href="/";note.append(live);document.getElementById("notice").append(note);
   for(const a of document.querySelectorAll("nav a"))if(!a.search)a.href=localUrl(a.pathname);
 }
 const make=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
 function link(text,url){const a=make("a",text);a.href=url.startsWith("/")?localUrl(url):url;return a;}
-function table(headers,rows){const wrap=make("div",null,"wrap"),t=make("table"),head=make("tr"),body=make("tbody");for(const h of headers){const th=make("th",h);th.scope="col";head.append(th);}t.createTHead().append(head);for(const cells of rows){const tr=make("tr");for(const c of cells){const td=make("td");td.append(c);tr.append(td);}body.append(tr);}t.append(body);wrap.append(t);return wrap;}
+function table(headers,rows,caption) {
+  const wrap=make("div",null,"wrap"), t=make("table"), head=make("tr"), body=make("tbody");
+  const name=caption||out.querySelector("h2:last-of-type")?.textContent||title.textContent;
+  t.append(make("caption",name,"sr"));
+  wrap.tabIndex=0;wrap.setAttribute("role","region");wrap.setAttribute("aria-label",name);
+  const numeric=headers.map(h=>/speed|FPS|1%|Samples|Change/i.test(h));
+  for(const [i,h] of headers.entries()){
+    const th=make("th",h,numeric[i]?"num":"");th.scope="col";head.append(th);
+  }
+  t.createTHead().append(head);
+  for(const cells of rows){
+    const tr=make("tr");
+    cells.forEach((value,i)=>{
+      const td=make("td");td.className=numeric[i]?"num":"detail-cell";
+      if(headers[i]==="Console speed")td.classList.add("primary-num");
+      td.append(value);tr.append(td);
+    });
+    body.append(tr);
+  }
+  t.append(body);wrap.append(t);return wrap;
+}
 function go(){location.href=localUrl("/compare?"+new URLSearchParams({q:q.value,emulators:[...checked()].join(",")}));}
-function info(heading,copy){title.textContent=heading;intro.textContent=copy;document.title=heading+" · Emu Bench";}
+function info(heading,copy){title.textContent=heading;intro.textContent=copy;document.title=heading+" · EmuBench";}
 function speedLabel(r){return Number.isFinite(r.speed_x)?r.speed_x.toFixed(2)+'×':'Unscored';}
-function list(rows){return table(["Game / scene","Emulator","System","Accuracy","Console speed","Average FPS","1% low","1% high"],rows.map(r=>[link(r.game,"/run/"+r.run_id),r.emulator+" "+(r.version||""),r.cpu+" · "+r.os+(r.execution?" · x64 on ARM64":""),conformance(r).label,speedLabel(r),r.outcome==="failed"?"Failed · "+r.reason:String(r.average_fps),String(r.low_1pct_fps??"—"),String(r.high_1pct_fps??"—")]));}
-function empty(message){out.append(make("p",message,"empty"));}
+function list(rows){
+  return table(["Game / scene","Emulator","Console speed","Accuracy","Average FPS","1% low","1% high","Device"],rows.map(r=>[
+    link(r.game,"/run/"+r.run_id),r.emulator+" "+(r.version||""),speedLabel(r),conformance(r).label,
+    r.outcome==="failed"?"Failed · "+r.reason:String(r.average_fps),r.low_1pct_fps??"—",r.high_1pct_fps??"—",
+    r.cpu+" · "+r.os+(r.execution?" · x64 on ARM64":"")]),"Benchmark results");
+}
+function empty(message,action){
+  const block=make("div",null,"empty");
+  block.append(make("strong",message));
+  if(action)block.append(action);
+  out.append(block);
+}
 async function get(path){const res=await fetch(path);if(!res.ok)throw Error(res.status===404?"This score could not be found.":"Scores are temporarily unavailable.");return res.json();}
-const q=make("input"),checks=[],mode=make("select");q.type="search";q.name="q";q.value=params.get("q")||"";q.placeholder="Game or ROM name";
+const q=make("input"),checks=[],mode=make("select");q.type="search";q.name="q";q.value=params.get("q")||"";q.placeholder="Enter a game or ROM name";
 function checked(){return checks.filter(c=>c.checked).map(c=>c.value);}
 function selectOption(el,value,label){const o=make("option",label);o.value=value;el.append(o);}
 function filters() {
-  const form=make("form",null,"tools"), label=make("label","Search scores");label.append(q);form.append(label);
+  const form=make("form",null,"tools"), label=make("label","Game or ROM name","query");label.append(q);form.append(label);
   if(route==="compare"){selectOption(mode,"emulators","Emulators on one device");selectOption(mode,"devices","Devices running one build");mode.value=params.get("mode")==="devices"?"devices":"emulators";const l=make("label","Compare");l.append(mode);form.append(l);}
-  const b=make("button","Search");form.append(b);controls.append(form);
+  const b=make("button","Search");form.append(b);document.getElementById("search").append(form);
   const fs=make("fieldset"),legend=make("legend","Emulators");fs.append(legend);
   const initial=params.get("emulators")?.split(",");
   for(const key of Object.keys(CORE_CONSOLES)){const l=make("label"),c=make("input");c.type="checkbox";c.checked=initial?initial.includes(key):true;c.value=key;checks.push(c);l.append(c," "+key);fs.append(l);}
-  controls.append(fs);
-  if(route==="browse"){const compare=make("button","Compare selected emulators");compare.onclick=go;controls.append(compare);}
+  const disclosure=make("details"),summary=make("summary","Filter emulators");
+  disclosure.append(summary,fs);controls.append(disclosure);
+  if(route==="compare")disclosure.open=true;
+  function summarize(){
+    const visible=checks.filter(c=>!c.parentElement.hidden);
+    const n=visible.filter(c=>c.checked).length;
+    summary.textContent="Emulator filters · "+(n===visible.length?"All "+n:n+" of "+visible.length);
+  }
+  fs.addEventListener("change",summarize);summarize();
+  disclosure.updateLabel=summarize;
+  if(route==="browse"){const compare=make("button","Compare selected emulators","secondary");compare.onclick=go;controls.append(compare);}
   form.onsubmit=e=>{e.preventDefault();const p=new URLSearchParams({q:q.value,emulators:checked().join(","),mode:mode.value});if(demo)p.set("demo","1");location.search=p;};
 }
 async function score() {
-  const id=location.pathname.split("/")[2];const r=demo?demoRows().find(row=>row.run_id===id):await get("/api/run/"+id);if(!r)throw Error("Example score not found.");info(r.game,r.emulator+" "+(r.version||"")+" · "+r.cpu+" · "+r.os+" "+r.arch+(r.execution?" · x64 on ARM64":""));
+  const id=location.pathname.split("/")[2];info("Run details","");const r=demo?demoRows().find(row=>row.run_id===id):await get("/api/run/"+id);if(!r)throw Error("Example score not found.");info(r.game,r.emulator+" "+(r.version||"")+" · "+r.cpu+" · "+r.os+" "+r.arch+(r.execution?" · x64 on ARM64":""));
   if(r.outcome==="failed"){out.append(make("p","This scene failed during "+r.reason+". No FPS was scored."),link("View campaign","/campaign/"+r.campaign_id));return;}
   const cards=make("div",null,"cards");for(const [label,field] of [["Console speed","speed_x"],["Average FPS","average_fps"],["1% low FPS","low_1pct_fps"],["1% high FPS","high_1pct_fps"]]){const el=make("div",label);el.append(make("strong",field==="speed_x"?speedLabel(r):(r[field]??"Unavailable")));cards.append(el);}out.append(make("p","Accuracy · "+conformance(r).label),cards);if(r.timing)out.append(make("h2","Frame timing"));
-  if(r.timing){const chart=make("div");out.append(chart);drawTiming(chart,r.timing);out.append(make("p","Blue shows average FPS per interval. Orange marks the slowest frame. Hover a point for its frame and time."));}else out.append(make("p","External process time includes startup, software rendering and exit. This runner reports aggregate throughput."));
+  if(r.timing){const chart=make("div");out.append(chart);drawTiming(chart,r.timing);}else out.append(make("p","External process time includes startup, software rendering and exit. This runner reports aggregate throughput."));
   const items=[["Repeatability",r.repeatability?.relative_spread!==undefined?"Three passes · "+(100*r.repeatability.relative_spread).toFixed(1)+"% spread":"Unrecorded"],["Host load",r.idle?r.idle.state+" ("+r.idle.cpu_percent+"% CPU before timing)":"Unknown"],["Runner",r.mode||"Legacy libretro"],["Video timing",r.video_mode?r.video_mode.region+" · "+r.video_mode.refresh_hz+" Hz ("+r.video_mode.source+")":"Unrecorded"],["Workload",r.profile],["Rendered frames",r.rendered_frames],["Warm-up frames",r.warmup_frames],["Submitted",new Date(r.received*1000).toISOString()],["Core SHA-256",r.core_sha256],["Worker SHA-256",r.worker_sha256]];
   if(r.hardware){const h=r.hardware;items.push(["Model",h.model||"Unavailable"],["RAM",Math.round(h.ram_bytes/2**30)+" GiB"],["OS build",h.os_build],["Physical CPU cores",h.physical_cores??"Unavailable"],["Core types",Object.entries(h.core_types).map(([k,v])=>v+" "+k).join(", ")||"Unavailable"],["GPU",h.gpu.join(", ")||"Unavailable"]);}
   for(const [i,w] of (r.conditions||[]).entries()){
@@ -51,8 +90,13 @@ async function score() {
 }
 function method(){info("Methodology","Carter Circuit v2 covers six deterministic scenes across Game Boy Advance and Super NES.");out.append(make("h2","What an FPS score measures"),make("p","The external native worker warms up for 120 console frames, times 600 uncapped frames with a monotonic clock, and requires one complete software framebuffer on every measured frame. Two untimed checkpoints verify the scene. The shortest reliable window for game libraries is still being calibrated."),make("p","Console speed is unrounded throughput divided by the loaded console mode’s refresh rate. The run records the region and rate. Average FPS is frame count divided by elapsed time. The 1% low and high are the reciprocals of the 99th and 1st frame-time percentiles. The details page shows each interval’s slowest frame."),make("h2","Comparison rules"),make("p","For SNES rankings, each device needs both builds on easy, normal and hard. Take the median FPS per scene and build. Weight the three performance ratios equally using a geometric mean, then take the median across installations. Show a 95% device-bootstrap interval from five installations. Missing scenes and device groups with reported scene failures are excluded. The table shows completion coverage and the reported failure count. Every submission is self-reported. Public installations and completed runs alone cannot establish an independent laboratory or a game compatibility rate."),make("h2","Accuracy"),make("p","Report each named diagnostic as passed, failed or unresolved. A pass rate applies only to the listed checks. Headless frame delivery excludes physical display, speaker and controller latency."),link("Read the workload source","https://github.com/MrCTO13/EmuBench/blob/main/emubench/circuit.py"));}
 async function browse(){
-  const heading={browse:"Score browser",campaign:"Campaign scores",compare:"Compare results",rankings:"Emulator rankings",history:"Version history"}[route];
-  info(heading,{browse:"Find published emulator runs by game or ROM name.",campaign:"Published results from this campaign.",compare:"Match identical workloads across emulators or devices.",rankings:"Controlled lab studies and community comparisons.",history:"Track emulator builds on the same installation, scene and timing worker."}[route]);filters();
+  const heading={browse:"Emulator benchmarks",campaign:"Campaign scores",compare:"Compare results",rankings:"Emulator rankings",history:"Version history"}[route];
+  info(heading,{browse:"Search by game to compare emulator speed, frame timing and accuracy on the same hardware.",campaign:"Published results from this campaign.",compare:"Match identical workloads across emulators or devices.",rankings:"Controlled lab studies and community comparisons.",history:"Track emulator builds on the same installation, scene and timing worker."}[route]);
+  if(route==="browse"){
+    document.querySelector(".lead").classList.add("home");
+    document.querySelector(".feature").hidden=false;
+  }
+  filters();
   let rows=[],cursor=null;
   async function more(){
     const p=new URLSearchParams({q:q.value});if(route==="campaign")p.set("campaign",location.pathname.split("/")[2]);if(cursor)p.set("after",cursor);
@@ -66,6 +110,7 @@ async function browse(){
     const consoles=new Set(rows.map(r=>r.profile.split("-")[0]));
     for(const c of checks)c.parentElement.hidden=!CORE_CONSOLES[c.value].some(system=>consoles.has(system));
   }
+  controls.querySelector("details")?.updateLabel();
   function render(){
     out.replaceChildren();const filtered=rows.filter(r=>checked().includes(r.emulator));
     if(route==="compare"){
@@ -75,7 +120,7 @@ async function browse(){
         const values=[...sets.values()].map(rs=>[mode.value==="devices"?rs[0].cpu+" · "+rs[0].os:build(rs[0]),median(rs.map(r=>r.speed_x)),accuracyGroup(rs)]);
         const max=Math.max(1,...values.map(row=>row[1]));
         for(const [label,fps,accuracy] of values.filter(v=>Number.isFinite(v[1]))){const li=make("li",label+" · "+fps.toFixed(2)+"× · "+accuracy),bar=make("meter");bar.max=max;bar.value=fps;bar.setAttribute("aria-label",label);li.append(bar);bars.append(li);}
-        out.append(make("h2",g[0].game),bars,list(g));
+        out.append(make("h2",g[0].game),make("p",mode.value==="devices"?g[0].emulator+" "+g[0].version:g[0].cpu+" · "+g[0].os,"note"),bars,list(g));
       }
     }else if(route==="rankings"){
       studyPanel();out.append(make("h2","Community Carter Circuit scores"),make("p","Matched SNES scenes require 5/5 CPU, audio and coprocessor checks, idle passes and accepted spread."));
@@ -92,10 +137,19 @@ async function browse(){
       for(const g of cohorts){out.append(make("h2",g[0].game+" · "+g[0].emulator));const versions=[...group(g.sort((a,b)=>a.received-b.received),build)];let prev=null;
         out.append(table(["Build","First submitted (UTC)","Accuracy","Median speed","Raw FPS","Change","Samples"],versions.map(([ver,rs])=>{const fps=median(rs.map(r=>r.average_fps));const change=prev?Math.round(100*(fps/prev-1))+"%":"—";prev=fps;return [link(ver,"/run/"+rs[0].run_id),new Date(rs[0].received*1000).toISOString().slice(0,10),accuracyGroup(rs),speedLabel({speed_x:median(rs.map(r=>r.speed_x))}),String(Math.round(fps)),change,String(rs.length)];})));}
     }else{
-      if(filtered.length)out.append(list(filtered));else empty("No published scores match this search.");
+      out.append(make("h2",demo?"Example runs":q.value?"Search results":"Published runs"));
+      if(filtered.length)out.append(list(filtered));
+      else if(!demo&&!q.value&&!rows.length&&route==="browse"){
+        empty("The first public run will appear here.",link("Explore a sample comparison","/compare?q=Super+Mario+World&demo=1"));
+        const start=make("section",null,"first-run");
+        start.append(make("h3","Benchmark Cartervania"),make("p","After downloading the CLI, run the GBA replay with mGBA. The result is saved on your device."),make("code","emubench carter --emulator mgba --scene normal"));
+        out.append(start);
+      }else{
+        empty("No scores match these filters.",link("Clear filters","/"));
+      }
       if(cursor){const next=make("button","Load more scores");next.onclick=async()=>{next.disabled=true;try{await more();render();}catch(e){status.textContent=e.message;next.disabled=false;}};out.append(next);}
     }
   }
   for(const c of checks)c.onchange=render;mode.onchange=render;render();
 }
-(async()=>{try{for(const a of document.querySelectorAll("nav a"))if(a.pathname===location.pathname)a.setAttribute("aria-current","page");if(route==="library")libraryPage();else if(route==="method")method();else if(route==="run")await score();else await browse();status.textContent="";}catch(e){status.textContent=e.message;}})();
+(async()=>{try{for(const a of document.querySelectorAll("nav a"))if(a.pathname===location.pathname||(route==="run"&&a.pathname==="/"))a.setAttribute("aria-current","page");if(route==="library")libraryPage();else if(route==="method")method();else if(route==="run")await score();else await browse();status.textContent="";}catch(e){status.textContent=e.message;}})();

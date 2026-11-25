@@ -13,3 +13,5 @@ Cartervania and Super Carter Bros. 3 are Carts game projects with their own sour
 Carter Circuit and the SA-1 and Super FX probe programs and graphics in this repository are original MIT-licensed source. Users build them locally. The optional edition catalog comes directly from the pinned libretro-database No-Intro metadata. CartsSNES remains a separately supplied Carts core.
 
 The optional Game Boy Color checks fetch Matt Currie's cgb-acid2 v1.1, two Mealybug Tearoom PPU timing tests, and five CGB sound tests written by Blargg from their upstream locations at run time. The CLI ships their identities and expected-result checks. See [STUDIES.md](STUDIES.md) for credits and reference images. The sample manifest uses public No-Intro metadata from the pinned Libretro Database revision recorded in each study.
+
+The scoreboard uses Barlow Semi Condensed under the SIL Open Font License. Its notice is in site/assets/barlow-license.txt. The Sunspill Orchard image is original Super Carter Bros. 3 gameplay from the owner’s published game gallery.

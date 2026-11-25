@@ -44,7 +44,7 @@ A random comparison token is assigned per exact ROM in the local device journal.
     emubench run --rom "My Game.sfc" --emulator bsnes --latest-core --out bsnes.json
     emubench compare snes9x.json bsnes.json --out comparison.html
 
-Open the report, check the emulators to display, and use the FPS trace link to inspect dips. The same comparison view is available in the downloadable scores.html for published runs. It matches cartridge/device tokens, OS, architecture, processor, workload profile, worker hash, warm-up and measured frames. It displays every matching repeat separately. Reports created before v0.2 remain individually readable. SNES co-processor games that need external firmware require additional support. Commercial performance claims require representative gameplay and repeatability validation.
+Open the report, check the emulators to display, and use the FPS trace link to inspect dips. The same comparison view is available in the downloadable scores.html for published runs. It matches cartridge/device tokens, OS, architecture, processor, workload profile, worker hash, warm-up and measured frames. It displays every matching repeat separately and identifies selected emulators with no matching run. Reports created before v0.2 remain individually readable. SNES co-processor games that need external firmware require additional support. Commercial performance claims require representative gameplay and repeatability validation.
 
 Desktop CI builds the native CLI and runs freshly generated GBA and SNES programs on each OS. This checks the measurement path. Reference-suite and commercial-game rankings require separate workloads and validation.
 

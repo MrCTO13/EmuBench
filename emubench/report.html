@@ -12,8 +12,8 @@
 <p>Compare submissions for the same cartridge on one device, with the same timing worker and frame window.</p>
 <label for="compare-query">Game or ROM name</label><input type="search" id="compare-query" placeholder="Search games">
 <label for="cohort">Game, device and frame window</label><select id="cohort"></select>
-<fieldset><legend>Emulators with matching runs</legend><div id="compare-peers"></div></fieldset>
-<div class="card tablewrap"><table><thead><tr><th>Emulator</th><th>Build</th><th>Average FPS</th><th>1% low</th><th>1% high</th><th>Details</th></tr></thead><tbody id="compare-rows"></tbody></table><p id="compare-message" role="status"></p></div></section>
+<fieldset><legend>Console emulators</legend><div id="compare-peers"></div></fieldset>
+<div class="card tablewrap"><table><thead><tr><th>Emulator</th><th>Build</th><th>Average FPS</th><th>1% low</th><th>1% high</th><th>Details</th></tr></thead><tbody id="compare-rows"></tbody></table><p id="compare-message" role="status"></p><p id="missing-peers" class="muted"></p></div></section>
 <section id="detail" hidden><a id="back" href="#" hidden>All published runs</a><p class="muted" id="context"></p><h1 id="game"></h1><p id="build"></p><p id="when" class="muted"></p><div class="card metrics" id="metrics"></div><div class="card"><h2>FPS over time</h2><p>The chart opens at the slowest measured frame. Select a point or use the slider to inspect another interval.</p><div id="chart"></div></div><p id="origin"></p></section>
 </main><script type="application/json" id="run-data"></script><script>/* CHART_JS */</script><script>
 const byId=id=>document.getElementById(id);
@@ -58,7 +58,7 @@ function parse(issue){
     if(!["average_fps","low_1pct_fps","high_1pct_fps"].every(k=>Number.isFinite(r[k])&&r[k]>=0))return;
     if(!Array.isArray(r.timing)||!r.timing.length||r.timing.length>120||
        !r.timing.every(b=>["start_ms","end_ms","avg_fps","worst_fps","worst_ms","worst_frame","worst_at_ms"].every(k=>Number.isFinite(b[k]))&&b.end_ms>b.start_ms))return;
-    runs.push({...r,number:issue.number,when:issue.created_at,finished:null});
+    runs.push({...r,submitter:issue.user?.id,number:issue.number,when:issue.created_at,finished:null});
   }catch{/* Skip malformed community submissions. */}
 }
 async function load(){

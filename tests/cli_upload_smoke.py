@@ -1,6 +1,7 @@
 """Exercise durable offline uploads with native runs and an actual campaign DB."""
 import json
 import os
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -38,7 +39,7 @@ def main():
         assert "2 queued" in cli("uploads","status")
         assert "2 queued" in cli("uploads","sync",expected=1)
 
-        with sqlite3.connect(private_home/"history.sqlite") as db:
+        with closing(sqlite3.connect(private_home/"history.sqlite")) as db:
             payloads = [json.loads(row[0]) for row in db.execute("SELECT payload FROM score_outbox")]
             assert {r["game"] for r in payloads} == {"Public Game", "Personal ROM"}
             assert all(r["rendered_frames"] == 120 and "frame_ns" not in r for r in payloads)

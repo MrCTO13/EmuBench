@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from . import downloads, engines, journal, scores
+from . import accuracy, carter, downloads, engines, journal, scores
 
 
 def arguments(commands):
@@ -20,7 +20,8 @@ def arguments(commands):
     actions = group.add_subparsers(dest="action", required=True)
     new = actions.add_parser("create")
     new.add_argument("queue", type=Path)
-    new.add_argument("--rom", type=Path, action="append", required=True)
+    new.add_argument("--rom", type=Path, action="append")
+    new.add_argument("--carter", choices=("all","easy","normal","hard"), help="Queue pinned Carter scenes")
     new.add_argument("--emulator", choices=tuple(scores.ADAPTERS), default="mgba")
     build = new.add_mutually_exclusive_group()
     build.add_argument("--version", default=None)
@@ -57,12 +58,25 @@ def create(args):
     if args.queue.exists():
         raise FileExistsError("Queue already exists. Use campaign resume.")
     roms = []
-    for path in dict.fromkeys(p.expanduser().resolve(strict=True) for p in args.rom):
-        scores.validate_file(path, args.emulator)
-        roms.append([str(path), engines.digest(path)])
+    scene_ids = []
+    if args.carter:
+        if args.rom and len(args.rom) != 1:
+            raise ValueError("A Carter queue accepts one pinned cartridge")
+        console = "gba" if args.emulator == "mgba" else "snes"
+        rom = carter.cartridge(console,args.rom[0] if args.rom else None)
+        for scene in carter.SCENES:
+            if scene.console == console and args.carter in ("all",scene.level):
+                scene_ids.append(scene.profile)
+                roms.append([str(rom),carter.GAMES[console].digest])
+    else:
+        if not args.rom:
+            raise ValueError("Supply --rom or select a Carter suite with --carter")
+        for path in dict.fromkeys(p.expanduser().resolve(strict=True) for p in args.rom):
+            scores.validate_file(path, args.emulator)
+            roms.append([str(path), engines.digest(path)])
     if args.emulator != "mgba" and args.version:
         raise ValueError("For SNES select --core PATH or --latest-core")
-    if args.latest_core or (args.emulator != "mgba" and not args.core):
+    if args.latest_core or ((args.emulator != "mgba" or args.carter) and not (args.core or args.version)):
         args.core = downloads.latest_core(args.emulator)
     if args.core:
         core = args.core.expanduser().resolve(strict=True)
@@ -74,6 +88,9 @@ def create(args):
     plan = dict(emulator=args.emulator, roms=roms, core=str(core), core_hash=engines.digest(core), commit=commit,
                 version=meta["tag"] if not args.core else None, warmup=args.warmup_frames, frames=args.frames, timeout=args.timeout, loop=args.loop,
                 days=args.days, idle_check=gate, dedicated=args.dedicated, idle_seconds=args.idle_seconds)
+    if scene_ids:
+        plan["scenes"] = scene_ids
+        plan["accuracy"] = accuracy.run(args.emulator,core)
     dest = args.queue.expanduser().resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
@@ -166,12 +183,18 @@ def resume(db, path, plan):
                 print(f"Round {number}, job {job_id}", flush=True)
                 try:
                     with journal.attempt(Path(rom), plan.get("version") or "local core", f"round {number}, job {job_id}") as (run_id, started):
-                        result = scores.measure(Path(rom), None, core, plan["warmup"], plan["frames"],
-                                                plan["timeout"], lambda: time.time() < deadline and ready(), rom_hash, plan.get("emulator", "mgba"))
+                        scene = carter.PROFILES[plan["scenes"][idx]] if plan.get("scenes") else None
+                        result = scores.measure(Path(rom), None, core, scene.warmup if scene else plan["warmup"],
+                                                carter.FRAMES if scene else plan["frames"], plan["timeout"],
+                                                lambda: time.time() < deadline and ready(), rom_hash,
+                                                plan.get("emulator", "mgba"), scene=scene)
+                        if scene:
+                            result["accuracy"] = accuracy.validated(plan["accuracy"],scene.console,
+                                                                   result["core_sha256"],result["worker_sha256"])
                         if result["core_sha256"] != plan["core_hash"]:
                             raise ValueError("Core changed during campaign")
                         result["source_commit"] = plan["commit"]
-                        result.update(id=run_id, local_name=Path(rom).name, started_utc=started, finished_utc=journal.now())
+                        result.update(id=run_id, local_name=scene.title if scene else Path(rom).name, started_utc=started, finished_utc=journal.now())
                         db.execute("UPDATE jobs SET status='done',result=?,error=NULL WHERE id=?",
                                    (json.dumps(result, separators=(",", ":")), job_id))
                         db.commit()

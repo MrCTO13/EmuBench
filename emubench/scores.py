@@ -12,7 +12,7 @@ import tempfile
 import time
 import uuid
 
-from . import details, engines, journal
+from . import carter, details, engines, journal
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
@@ -65,7 +65,7 @@ class InterruptedWindow(InterruptedError):
     """The device became busy or another worker owns the measurement slot."""
 
 
-def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator):
+def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False):
     engines.home().mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
            "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
@@ -77,6 +77,12 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator):
         if ready and not ready():
             raise InterruptedWindow("Waiting for idle")
         args = [worker, str(len(data)), str(warmup), str(frames), emulator]
+        root = Path(folder)
+        if playback is not None:
+            if len(playback) != 2 * (warmup + frames):
+                raise ValueError("Controller recording has the wrong length")
+            (root / "controller.bin").write_bytes(playback)
+            args.append("diagnostic" if diagnostic else "replay")
         start = time.monotonic()
         with subprocess.Popen(args, cwd=folder, env=env, stdin=source, stdout=subprocess.DEVNULL, stderr=errors) as proc:
             try:
@@ -104,10 +110,14 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator):
             finally:
                 if proc.poll() is None:
                     proc.kill()
-        return (Path(folder) / "frame-evidence").read_text(encoding="ascii").splitlines()
+        evidence = (root / "frame-evidence").read_text(encoding="ascii").splitlines()
+        if playback is None:
+            return evidence, ()
+        names = ["final-frame"] if diagnostic else ["scene-start", "scene-end"]
+        return evidence, tuple((root / name).read_bytes() for name in names)
 
 
-def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_rom=None, emulator="mgba"):
+def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_rom=None, emulator="mgba", scene=None):
     if not 100 <= frames <= 1_000_000 or not 0 <= warmup <= 1_000_000 or timeout <= 0:
         raise ValueError("Use 100–1,000,000 measured frames, 0–1,000,000 warm-up frames and a positive timeout")
     name, profile = ADAPTERS[emulator]
@@ -130,14 +140,19 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
         tag, commit = meta["tag"], meta["commit"]
     core_hash = engines.digest(core)
     worker = engines.worker()
-    output = run_worker(worker, core, data, warmup, frames, timeout, ready, name)
+    output, checkpoints = run_worker(worker, core, data, warmup, frames, timeout, ready, name,
+                                     scene.playback if scene else None)
+    scene_evidence = {}
+    if scene:
+        scene_evidence["scene_checkpoints"] = scene.validate(rom_hash, warmup, frames, checkpoints)
+        profile = scene.profile
     if len(output) != frames + 5 or output[0] != "EB2":
         raise ValueError("Incomplete frame evidence")
     version, audio, fingerprint, visual_changes = output[1:5]
     if tag and version != tag:
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
     times = list(map(int, output[5:]))
-    return {"schema": 1, "id": str(uuid.uuid4()), "profile": profile,
+    return {**scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
             "comparison_id": journal.comparison_id(rom_hash),
             "emulator": name, "version": version, "source_commit": commit,
             "core_sha256": core_hash, "worker_sha256": engines.digest(worker),
@@ -171,7 +186,16 @@ def save(result, destination):
 
 
 def public_fields(result, title):
-    if result["schema"] != 1 or (result["emulator"], result["profile"]) not in ADAPTERS.values():
+    from .accuracy import validated
+    scene = carter.PROFILES.get(result["profile"])
+    allowed = (result["emulator"], result["profile"]) in ADAPTERS.values()
+    if scene:
+        expected_console = {"mGBA":"gba","Snes9x":"snes","bsnes":"snes"}.get(result["emulator"])
+        allowed = (scene.console == expected_console and result.get("rom_sha256") == carter.GAMES[scene.console].digest
+                   and result["warmup_frames"] == scene.warmup and result["frames"] == carter.FRAMES
+                   and tuple(result.get("scene_checkpoints", ())) in scene.references)
+        title = scene.title
+    if result["schema"] != 1 or not allowed:
         raise ValueError("Unknown result format")
     if not isinstance(title, str) or not 1 <= len(title.strip()) <= 90 or any(
             not (c.isalnum() or c in " .,'’()+&!_-") for c in title):
@@ -192,6 +216,11 @@ def public_fields(result, title):
     if not isinstance(cpu, str) or not 1 <= len(cpu) <= 160 or not cpu.isprintable():
         raise ValueError("Invalid processor model")
     cohort = {}
+    if "accuracy" in result:
+        cohort["accuracy"] = validated(result["accuracy"], "gba" if result["emulator"] == "mGBA" else "snes",
+                                       result["core_sha256"], result["worker_sha256"])
+    if scene:
+        cohort["scene_checkpoints"] = list(result["scene_checkpoints"])
     if "comparison_id" in result:
         cohort["comparison_id"] = str(uuid.UUID(result["comparison_id"]))
     return {**cohort, "run_id": str(uuid.UUID(result["id"])), "game": title.strip(), "profile": result["profile"],
@@ -217,7 +246,8 @@ def publish(public):
                                                     "-f", "q=" + query], timeout=40))
         url = next((item["html_url"] for item in found["items"] if item["title"].startswith(prefix)), None)
         if not url:
-            body = (f"Personal ROM · self-reported · {public['profile']}\n\n"
+            kind = "Carter FPS suite" if public["profile"] in carter.PROFILES else "Personal ROM"
+            body = (f"{kind} · self-reported · {public['profile']}\n\n"
                     "| Average FPS | 1% low FPS | 1% high FPS |\n| ---: | ---: | ---: |\n"
                     f"| {public['average_fps']:.0f} | {public['low_1pct_fps']:.0f} | {public['high_1pct_fps']:.0f} |\n\n"
                     + "\x60\x60\x60json\n" + json.dumps(public, ensure_ascii=False, indent=2) + "\n\x60\x60\x60")

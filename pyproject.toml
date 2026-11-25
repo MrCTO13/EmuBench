@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emubench"
-version = "0.2.0"
+version = "0.3.0"
 requires-python = ">=3.10"
 description = "Measure uncapped GBA and Super NES core performance"
 license = {file = "LICENSE"}

@@ -5,7 +5,7 @@ import sqlite3
 import subprocess
 import sys
 
-from . import campaign, details, downloads, engines, journal, scores
+from . import accuracy, campaign, carter, details, downloads, engines, journal, scores
 from .catalog import CATALOG, TARGETS, host_target
 from http.client import HTTPException
 from zipfile import BadZipFile
@@ -13,7 +13,7 @@ from zipfile import BadZipFile
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="emubench", description="Emu Bench presented by Carts")
-    parser.add_argument("--version", action="version", version="Emu Bench 0.2.0")
+    parser.add_argument("--version", action="version", version="Emu Bench 0.3.0")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("emulators", help="List supported emulator downloads")
     dl = commands.add_parser("download", help="Fetch and verify the latest upstream packages")
@@ -55,6 +55,16 @@ def main(argv=None):
     compare.add_argument("results", nargs="+", type=Path)
     compare.add_argument("--game", help="Display title for this comparison")
     compare.add_argument("--out", type=Path, required=True)
+    suites = commands.add_parser("carter", help="Run deterministic Carter FPS scenes")
+    suites.add_argument("--rom", type=Path, help="Pinned original cartridge, or fetch with authenticated gh")
+    suites.add_argument("--scene", choices=("all","easy","normal","hard"), default="all")
+    suites.add_argument("--out-dir", type=Path, help="Private directory for per-scene trace files")
+    diag = commands.add_parser("accuracy", help="Run the named upstream CPU/memory conformance programs")
+    diag.add_argument("--out", type=Path, help="Write the diagnostic results as JSON")
+    diag.add_argument("--refresh", action="store_true", help="Re-run even if this build has a cached result")
+    for command in (suites, diag):
+        command.add_argument("--emulator", choices=tuple(scores.ADAPTERS), required=True)
+        command.add_argument("--core", type=Path, help="Pinned local core. By default fetch the latest core.")
     campaign.arguments(commands)
     args = parser.parse_args(argv)
     try:
@@ -65,6 +75,33 @@ def main(argv=None):
         elif args.command == "download":
             return downloads.batch(CATALOG if args.all else [args.emulator], args.target or host_target(),
                                    args.channel, args.version, args.list_only)
+        elif args.command in ("carter","accuracy"):
+            core = args.core.expanduser().resolve(strict=True) if args.core else downloads.latest_core(args.emulator)
+            console = "gba" if args.emulator == "mgba" else "snes"
+            if args.command == "carter":
+                rom = carter.cartridge(console, args.rom)
+            record = accuracy.run(args.emulator, core, getattr(args,"refresh",False))
+            print(accuracy.summary(record))
+            if args.command == "accuracy":
+                if args.out:
+                    with args.out.open("x",encoding="utf-8") as report_file:
+                        json.dump(record,report_file,indent=2)
+                return int(any(value != "pass" for value in record["checks"].values()))
+            for scene in carter.SCENES:
+                if scene.console != console or args.scene not in ("all",scene.level):
+                    continue
+                with journal.attempt(rom, core.name, scene.title) as (run_id,start):
+                    result = scores.measure(rom,None,core,scene.warmup,carter.FRAMES,120,
+                                            expected_rom=carter.GAMES[console].digest,emulator=args.emulator,scene=scene)
+                    if result["core_sha256"] != record["core_sha256"] or result["worker_sha256"] != record["worker_sha256"]:
+                        raise ValueError("Core or worker changed during the suite")
+                    result.update(id=run_id,local_name=scene.title,started_utc=start,finished_utc=journal.now(),accuracy=record)
+                    dest = args.out_dir / (scene.profile + "-" + run_id + ".json") if args.out_dir else None
+                    path = scores.save(result,dest)
+                    journal.complete(result,path)
+                print(f"{scene.title} · {scene.description}\n"
+                      f"{result['average_fps']} avg / {result['low_1pct_fps']} low / {result['high_1pct_fps']} high FPS"
+                      f"\nPrivate result: {path}")
         elif args.command == "campaign":
             campaign.execute(args)
         elif args.command == "history":
@@ -80,7 +117,7 @@ def main(argv=None):
                 entry = scores.public_fields(trace, args.game or "Personal ROM")
                 if not entry.get("comparison_id"):
                     raise ValueError("This result predates matched runs. Use details to view it individually.")
-                if not args.game:
+                if not args.game and trace["profile"] not in carter.PROFILES:
                     entry["game"] = trace.get("local_name", "Personal ROM")
                 records[entry["run_id"]] = entry
             print(details.write_embedded(list(records.values()), args.out))

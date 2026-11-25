@@ -76,3 +76,28 @@ To resume after login on the test Mac, put the extracted CLI in its permanent lo
     launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/org.emubench.nightly.plist"
 
 On Windows, Task Scheduler can invoke the same “campaign resume” command at logon. On Linux it can run as a user service. Campaigns never publish automatically.
+
+## Carter FPS and accuracy checks
+
+    emubench carter --emulator mgba --rom "Carts-Cartervania-GBA.gba" --out-dir results
+    emubench carter --emulator snes9x --scene hard --out-dir results
+    emubench carter --emulator bsnes --scene hard --out-dir results
+    emubench accuracy --emulator snes9x --refresh --out diagnostics.json
+    emubench campaign create carter.sqlite --emulator mgba --carter all --loop --days 7
+    emubench campaign resume carter.sqlite
+
+With no ROM path, Carter mode uses the verified cached original or fetches the exact build from the game's private GitHub repository using your authenticated GitHub CLI. Locally supplied cartridges must match the pinned edition. The open-source CLI and its release archives contain only the runner, replay definitions and reference digests. Public upstream diagnostics work independently of Carter access.
+
+| Console and game | Easy | Normal | Hard |
+|---|---|---|---|
+| GBA · Cartervania | Idle castle entrance | Three standing jumps | Move right, jump and dash |
+| SNES · Super Carter Bros. 3 | Sunlit Shores map | Walk through Sunspill Orchard | Run, jump and dash through the orchard |
+
+Each scene starts from power-on with clean temporary storage. A fixed controller replay reaches the scene, then the host times 180 rendered advances with audio enabled. The runner compares a full-frame hash at the end of setup and on a separate advance after timing against a pinned pair of software reference images (stored as digests). An unexpected image invalidates the scene score. A newer core can require review if its video output changes. The labels describe the work in the scene. Their ordering by host FPS can vary. These short windows are intended for repeatable engineering comparisons. Commercial gameplay coverage, agreement with original console output and minimum duration for marketing claims require separate validation.
+
+The CLI also runs a versioned set of named upstream diagnostic programs with the same core and worker. It downloads pinned inputs into the local cache, verifies their SHA-256, runs them separately from FPS timing and reads the terminal message using a pattern derived from the upstream font and display position. Each program contributes one result. Pass, fail and unresolved are shown explicitly. The diagnostic total is a count of programs. It makes no estimate of how much of the console is emulated accurately. A standalone accuracy command returns a nonzero status for a failed or unresolved test. A Carter run retains its FPS and its diagnostic outcomes independently.
+
+- GBA uses the ARM, Thumb and memory programs in [jsmolka/gba-tests at a7113b6](https://github.com/jsmolka/gba-tests/tree/a7113b67e63f83a9b321696ddd7042ccfad6c881). The current mGBA profile uses its built-in BIOS implementation.
+- SNES uses the basic 65C816 instruction and SPC700 instruction ROMs from [gilyon/snes-tests v1.4](https://github.com/gilyon/snes-tests/releases/tag/v1.4). Graphics timing and enhancement chips such as Super FX are outside this diagnostic set.
+
+Each saved Carter trace includes its scene, checkpoint digests and per-program outcomes. Use the existing compare, details, history and opt-in publish commands. Easy, normal and hard have different profile IDs so their results appear in separate comparison groups. The FPS command runs all three scenes by default. A campaign accepts the same named scene set with --carter.

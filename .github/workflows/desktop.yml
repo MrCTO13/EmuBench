@@ -63,6 +63,13 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/browser-qa" playwright-core@1.56.1 --no-audit --no-fund
           NODE_PATH="$RUNNER_TEMP/browser-qa/node_modules" node tests/test_viewer.cjs
+      - name: Read upstream diagnostic pass and fail screens from the packaged CLI
+        shell: bash
+        run: |
+          for emulator in mgba snes9x bsnes; do
+            ./dist/emubench accuracy --emulator "$emulator" --out "$RUNNER_TEMP/$emulator-checks.json" || test "$?" = 1
+          done
+          python -c "import os,json,pathlib; base=pathlib.Path(os.environ['RUNNER_TEMP']); results=[json.loads((base/(key+'-checks.json')).read_text()) for key in ('mgba','snes9x','bsnes')]; assert [len(r['checks']) for r in results]==[3,2,2]; assert all(r['suite']=='cpu-memory-v1' and all(c in ('pass','fail') for c in r['checks'].values()) for r in results)"
       - name: Assemble distribution
         shell: bash
         run: |

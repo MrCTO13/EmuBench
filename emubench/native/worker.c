@@ -34,6 +34,9 @@ static struct {
 static unsigned renders, pixel_bytes = 2;
 static uint64_t audio_frames, signature = 2166136261u;
 static bool bad_video, have_previous, snes;
+static uint16_t buttons;
+static const char *capture_video;
+static enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_0RGB1555;
 static uint32_t previous_sample, visual_changes;
 #ifdef _WIN32
 static LARGE_INTEGER frequency, origin;
@@ -86,6 +89,7 @@ static bool environment(unsigned command, void *data) {
         return true;
     case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
         enum retro_pixel_format format = *(enum retro_pixel_format *)data;
+        pixel_format = format;
         pixel_bytes = format == RETRO_PIXEL_FORMAT_XRGB8888 ? 4 : 2;
         return format == RETRO_PIXEL_FORMAT_RGB565 || format == RETRO_PIXEL_FORMAT_0RGB1555 ||
                format == RETRO_PIXEL_FORMAT_XRGB8888;
@@ -97,7 +101,7 @@ static bool environment(unsigned command, void *data) {
         else if (!strcmp(var->key, "mgba_skip_bios")) var->value = "ON";
         else if (!strcmp(var->key, "mgba_idle_optimization")) var->value = "Don't Remove";
         else if (!strcmp(var->key, "bsnes_run_ahead_frames")) var->value = "OFF";
-        else return false;
+        else { var->value = NULL; return false; }
         return true;
     }
     case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
@@ -121,6 +125,16 @@ static void video(const void *buffer, unsigned width, unsigned height, size_t pi
         return;
     }
     const uint8_t *pixels = buffer;
+    // The accuracy command requests one final image on a separate, untimed advance.
+    if (capture_video) {
+        FILE *f = fopen(capture_video, "wb");
+        if (!f) exit(fail("Could not save diagnostic frame"));
+        fprintf(f, "%u %u %u\n", width, height, (unsigned)pixel_format);
+        for (unsigned y = 0; y < height; ++y)
+            if (fwrite(pixels + y * pitch, pixel_bytes, width, f) != width)
+                exit(fail("Incomplete diagnostic frame"));
+        if (fclose(f)) exit(fail("Incomplete diagnostic frame"));
+    }
     uint32_t sample = 2166136261u;
     for (unsigned i = 0; i < 8; i++) {
         size_t offset = (i * 19 + 5) * pitch + (i * 29 + 3) * pixel_bytes;
@@ -140,8 +154,9 @@ static size_t audio_batch(const int16_t *buffer, size_t frames) {
 }
 static void poll_input(void) {}
 static int16_t input(unsigned port, unsigned device, unsigned index, unsigned id) {
-    (void)port; (void)device; (void)index; (void)id;
-    return 0;
+    if (port || device != RETRO_DEVICE_JOYPAD || index) return 0;
+    if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return (int16_t)buttons;
+    return id < 16 && (buttons & (1u << id)) ? 1 : 0;
 }
 static int open_core(void) {
 #ifdef _WIN32
@@ -169,7 +184,7 @@ static long number(const char *value, long min, long max) {
     return *value && !*end && min <= n && n <= max ? n : -1;
 }
 int main(int argc, char **argv) {
-    if (argc != 5) return fail("Expected ROM byte count, warm-up frames, measured frames and core name");
+    if (argc != 5 && argc != 6) return fail("Expected ROM byte count, warm-up frames, measured frames and core name");
     long bytes = number(argv[1], 192, 32 * 1024 * 1024);
     long warmup = number(argv[2], 0, 1000000), frames = number(argv[3], 100, 1000000);
     if (bytes < 0 || warmup < 0 || frames < 0) return fail("Invalid measurement parameters");
@@ -210,7 +225,24 @@ int main(int argc, char **argv) {
         game.size = 0;
     }
     if (!core.load_game(&game)) return fail("Core could not load this ROM");
-    for (long i = 0; i < warmup; i++) core.run();
+    uint8_t *replay = NULL;
+    bool diagnostic = false;
+    if (argc == 6) {
+        diagnostic = !strcmp(argv[5], "diagnostic");
+        if (!diagnostic && strcmp(argv[5], "replay")) return fail("Unknown workload mode");
+        size_t length = (size_t)(warmup + frames) * 2;
+        FILE *file = fopen("controller.bin", "rb");
+        replay = malloc(length);
+        if (!file || !replay || fread(replay, 1, length, file) != length || fgetc(file) != EOF)
+            return fail("Invalid controller recording");
+        fclose(file);
+    }
+    for (long i = 0; i < warmup; i++) {
+        if (replay) buttons = (uint16_t)(replay[i*2] | replay[i*2+1] << 8);
+        if (replay && !diagnostic && i + 1 == warmup) capture_video = "scene-start";
+        core.run();
+    }
+    capture_video = NULL;
     audio_frames = 0;
     bad_video = false;
     visual_changes = 0;
@@ -218,6 +250,10 @@ int main(int argc, char **argv) {
     signature = 2166136261u;
     uint64_t last = clock_ns();
     for (long i = 0; i < frames; i++) {
+        if (replay) {
+            long pos = (warmup + i) * 2;
+            buttons = (uint16_t)(replay[pos] | replay[pos+1] << 8);
+        }
         renders = 0;
         core.run();
         uint64_t now = clock_ns();
@@ -232,6 +268,15 @@ int main(int argc, char **argv) {
     fprintf(evidence, "EB2\n%s\n%" PRIu64 "\n%016" PRIx64 "\n%" PRIu32 "\n", version, audio_frames, signature, visual_changes);
     for (long i = 0; i < frames; i++) fprintf(evidence, "%" PRIu64 "\n", timings[i]);
     if (fclose(evidence)) return fail("Incomplete frame evidence");
+    // Capture the next frame after sealing the timed interval and its counters.
+    if (replay) {
+        renders = 0;
+        capture_video = diagnostic ? "final-frame" : "scene-end";
+        core.run();
+        if (bad_video || renders != 1) return fail("Incomplete visual checkpoint");
+        capture_video = NULL;
+    }
+    free(replay);
     core.unload_game();
     core.deinit();
     free(timings);

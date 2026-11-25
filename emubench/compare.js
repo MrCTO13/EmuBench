@@ -40,7 +40,7 @@ function fillPeers() {
   const preserve = activeGroup === compareBy.value;
   activeGroup = compareBy.value;
   const entries = groups.get(activeGroup) || [];
-  const expected = entries.length ? entries[0].profile === "snes-boot-no-input-v1" ?
+  const expected = entries.length ? entries[0].profile.startsWith("snes-") ?
     ["Snes9x", "bsnes", "Carts"] : ["mGBA", "gpSP", "Carts"] : [];
   const seen = new Set([...expected, ...entries.map(r => r.emulator)]);
   comparePeers.replaceChildren(...[...seen].sort().map(name => {
@@ -57,7 +57,7 @@ function renderCompared() {
   compareBody.replaceChildren();
   for (const run of entries.filter(r => selected.has(r.emulator))) {
     const row = document.createElement("tr");
-    for (const value of [run.emulator,run.version,run.average_fps,run.low_1pct_fps,run.high_1pct_fps]) {
+    for (const value of [run.emulator,run.version,run.average_fps,run.low_1pct_fps,run.high_1pct_fps, diagnosticCount(run)]) {
       const cell = document.createElement("td");
       cell.textContent = typeof value === "number" ? Math.round(value) : value;
       row.append(cell);

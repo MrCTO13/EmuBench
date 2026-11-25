@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from . import adapters, accuracy, carter, chips, circuit, downloads, engines, journal, library, scores, uploads
+from . import lab, adapters, accuracy, carter, chips, circuit, downloads, engines, journal, library, scores, uploads
 
 
 def arguments(commands):
@@ -23,6 +23,7 @@ def arguments(commands):
     new.add_argument("queue", type=Path)
     new.add_argument("--rom", type=Path, action="append", help="Local ROM, ZIP or directory (repeatable)")
     new.add_argument("--rom-dir", type=Path, action="append", help="Recursively scan a ROM library (repeatable)")
+    new.add_argument("--study", choices=("snes","gba"),help="Benchmark the frozen sample from this library")
     new.add_argument("--system-dir", type=Path, help="Local firmware directory")
     new.add_argument("--share-title", action="store_true", help="Share known catalog names and editions")
     new.add_argument("--circuit", choices=("all",*circuit.LEVELS), help="Queue the source-built public scenes")
@@ -116,6 +117,12 @@ def create(args):
             scores.validate_file(path, emulator)
             workloads.append(dict(path=str(path), sha256=engines.digest(path), emulator=emulator))
 
+    study_id=None
+    if getattr(args,"study",None):
+        if args.circuit or args.carter or (args.warmup_frames,args.frames)!=(120,1800):
+            raise ValueError("The registered boot study uses 120 warm-up and 1800 measured frames")
+        workloads=lab.select_jobs(args.study,workloads)
+        study_id=args.study+"-us-boot-v1"
     cores = {}
     for peer in dict.fromkeys(w["emulator"] for w in workloads):
         tag = commit = None
@@ -139,7 +146,7 @@ def create(args):
     if all("error" in item for item in cores.values()):
         raise ValueError("No compatible core could be installed")
     engines.worker()
-    plan = dict(share_title=args.share_title, campaign_id=str(uuid.uuid4()), workloads=workloads, cores=cores, warmup=args.warmup_frames, frames=args.frames,
+    plan = dict(study=study_id, share_title=args.share_title, campaign_id=str(uuid.uuid4()), workloads=workloads, cores=cores, warmup=args.warmup_frames, frames=args.frames,
                 system_dir=os.environ.get("EMUBENCH_SYSTEM_DIR"), timeout=args.timeout, loop=args.loop, days=args.days, idle_check=gate,
                 dedicated=args.dedicated, idle_seconds=args.idle_seconds)
     if args.circuit:

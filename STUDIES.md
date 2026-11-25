@@ -8,8 +8,8 @@ Each edition gets 120 warm-up frames followed by 1,800 measured boot frames with
 
 ## Run and review
 
-1. Use `emubench study list --console snes` to see the games, then install the matching edition catalog with `emubench catalog install snes`.
-2. Point `emubench bench /path/to/selected-games --queue lab.sqlite --dedicated` at the local editions on a reserved host. An idle check can replace the dedicated setting. Use one directory per console. Enable score uploads separately to share individual run pages.
+1. Use `emubench study list --console snes` to inspect the required game editions.
+2. Point `emubench bench /path/to/library --study snes --queue lab.sqlite --dedicated` at a ROM library on a reserved host. Emu Bench installs the pinned edition catalog, selects the required editions, reports missing games before timing, and interleaves peers and titles in a fixed order. An idle check can replace the dedicated setting. Use one directory per console. Enable score uploads separately to share individual run pages.
 3. Run `emubench study review --console snes --queue lab.sqlite --out review.json`. The CLI checks the full first round, recomputes FPS from local frame traces, and writes a public-field receipt. Local paths, ROMs, raw frame traces, firmware and device logs stay on the machine.
 4. A maintainer who controlled or witnessed the run checks its hardware, power configuration, idle conditions, matching settings, software versions, lack of selective retries and score traces. Record the review in the project history and include the public receipt under `site/reviewed/` only after signoff. Publishing a new website version admits that receipt to the lab board. A public submission cannot grant itself lab status. A digest or local receipt alone cannot establish who controlled the host.
 

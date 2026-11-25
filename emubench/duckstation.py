@@ -25,14 +25,14 @@ def execute(args):
     firmware=args.system_dir.resolve(strict=True)
     if not rom.is_file() or not firmware.is_dir() or not 100<=args.frames<=1000000 or args.timeout<=0:
         raise ValueError("Choose a local image, firmware directory and a valid measurement window")
-    version=subprocess.run([runner,"-version"],capture_output=True,text=True,timeout=15,check=True)
+    version=subprocess.run([runner,"-version"],capture_output=True,text=True,timeout=15)
     identity=re.search(r"DuckStation Regression Test Runner Version ([^\r\n]+)",version.stdout+version.stderr)
-    if not identity:
+    if version.returncode not in (0,1) or not identity:
         raise ValueError("Executable did not identify as the DuckStation regression runner")
     with tempfile.TemporaryDirectory() as folder:
-        command=[runner,"-console","-log","info","-renderer","Software","-frames",str(args.frames),
+        command=[runner,"-console","-log","Info","-renderer","Software","-frames",str(args.frames),
                  "-dumpdir",folder,"-dumpinterval",str(max(1,args.frames//2)),
-                 "-setting","Folders/Bios="+str(firmware),"--",rom]
+                 "-setting","BIOS/SearchDirectory="+str(firmware),"--",rom]
         # Keep the upstream log private. Only its total and checkpoint existence enter the receipt.
         output=subprocess.run(command,cwd=folder,capture_output=True,timeout=args.timeout)
         log=(output.stdout+output.stderr).decode(errors="replace")

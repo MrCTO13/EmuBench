@@ -116,6 +116,7 @@ def main(argv=None):
     run.add_argument("--system-dir",type=Path,help="Local firmware directory")
     bench.add_argument("--dedicated",action="store_true")
     bench.add_argument("--idle-check",type=Path)
+    bench.add_argument("--study",choices=("snes","gba"),help="Find and benchmark the 24 registered game editions")
     bench.add_argument("--share-title",action="store_true")
     duckstation.arguments(commands)
     lab.arguments(commands)
@@ -217,7 +218,7 @@ def main(argv=None):
                       f"\nPrivate result: {path}")
                 uploads.flush(limit=3)
         elif args.command == "campaign":
-            campaign.execute(args)
+            return campaign.execute(args)
         elif args.command == "history":
             journal.history(args.game, args.limit)
         elif args.command == "details":

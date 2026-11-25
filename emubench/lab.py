@@ -4,10 +4,40 @@ import json
 from pathlib import Path
 import sqlite3
 import uuid
-from . import adapters, scores
+from . import adapters, identify, library, scores
 
 def studies():
     return json.loads(Path(__file__).with_name("studies.json").read_text(encoding="utf-8"))
+
+def select_jobs(console, workloads):
+    import hashlib
+    study=next(s for s in studies() if s["console"]==console)
+    titles={g["edition"]:g["title"] for group in study["groups"] for g in group["games"]}
+    identify.install(console)
+    selected=[]
+    found=set()
+    editions={}
+    for job in workloads:
+        peer=job["emulator"]
+        path=Path(job["path"])
+        suffix=Path(job.get("member",path)).suffix.lower()
+        if adapters.content_console(suffix,peer)!=console:
+            continue
+        key=job["sha256"]
+        if key not in editions:
+            data=library.read_pinned_member(path,job["member"],peer) if "member" in job else path.read_bytes()
+            editions[key]=(identify.match(console,data) or {}).get("edition")
+        edition=editions[key]
+        if edition in titles and (edition,peer) not in found:
+            found.add((edition,peer))
+            selected.append((edition,job))
+    missing=set(titles)-{edition for edition,_ in selected}
+    if missing:
+        raise ValueError("Study is missing these editions: "+", ".join(titles[k] for k in sorted(missing)))
+    # Interleave builds and titles using an order fixed before observing any results.
+    selected.sort(key=lambda pair:hashlib.sha256((study["id"]+"/"+pair[0]+"/"+pair[1]["emulator"]).encode()).digest())
+    return [job for _,job in selected]
+
 
 def arguments(commands):
     p=commands.add_parser("study",help="List the frozen sample or prepare a controlled campaign for review")
@@ -17,6 +47,8 @@ def arguments(commands):
     p.add_argument("--out",type=Path)
 
 def review(study, plan, jobs):
+    if plan.get("study")!=study["id"]:
+        raise ValueError("The queue was not registered for this study before measurement")
     if not (plan.get("dedicated") or plan.get("idle_check") or plan.get("idle_seconds")):
         raise ValueError("Missing campaign timing gate")
     games={g["edition"] for group in study["groups"] for g in group["games"]}
@@ -65,6 +97,8 @@ def execute(args):
     with closing(sqlite3.connect(args.queue.resolve(strict=True).as_uri()+"?mode=ro",uri=True)) as db:
         db.execute("BEGIN")
         plan=json.loads(db.execute("SELECT plan FROM campaign").fetchone()[0])
+        if db.execute("SELECT 1 FROM failures JOIN jobs ON jobs.id=failures.job WHERE jobs.round=1 LIMIT 1").fetchone():
+            raise ValueError("The first round contains a failed attempt; the aggregate is withheld")
         receipt=review(study,plan,db.execute("SELECT status,attempts,result FROM jobs WHERE round=1 ORDER BY id"))
     validate_receipt([study],receipt)
     with args.out.open("x",encoding="utf-8") as f:

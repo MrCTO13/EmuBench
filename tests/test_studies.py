@@ -1,6 +1,3 @@
-from copy import deepcopy
-import json
-from pathlib import Path
 import unittest
 import uuid
 from emubench import adapters, catalog, lab
@@ -22,7 +19,7 @@ class Studies(unittest.TestCase):
         for bad in (rows[:-1],rows[:-1]+[rows[0]],[{**rows[0],"path":"private"},*rows[1:]]):
             with self.assertRaises(ValueError):
                 lab.validate_receipt([s],{**r,"rows":bad})
-        plan={"dedicated":True,"cores":{"snes9x":{"sha256":"a"*64},"bsnes":{"sha256":"b"*64}}}
+        plan={"study":s["id"],"dedicated":True,"cores":{"snes9x":{"sha256":"a"*64},"bsnes":{"sha256":"b"*64}}}
         with self.assertRaisesRegex(ValueError,"48 required"):
             lab.review(s,plan,[])
         with self.assertRaisesRegex(ValueError,"failed"):

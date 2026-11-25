@@ -335,9 +335,11 @@ def batch(keys, target, channel, version, plan):
                     print(sameboy_linux.install(version))
                 else:
                     raise ValueError("Run the SameBoy source installer on the target Linux ARM64 machine")
-            elif target == "windows-arm64" and target == host_target() and selected != "desktop" and key in ("mgba","snes9x","bsnes"):
+            elif target == "windows-arm64" and selected != "desktop" and key in ("mgba","snes9x","bsnes"):
                 if plan:
                     print(f"{CATALOG[key].name}: native upstream source build ({version})")
+                elif target!=host_target():
+                    raise ValueError("Run the native source installer on the target Windows ARM64 machine")
                 elif key == "mgba":
                     print(engines.install(version)[0])
                 else:

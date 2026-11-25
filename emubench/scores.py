@@ -117,7 +117,8 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
                 if proc.returncode == 75:
                     raise InterruptedWindow("Another measurement is active on this device")
                 if proc.returncode:
-                    errors.seek(0)
+                    end = errors.seek(0, os.SEEK_END)
+                    errors.seek(max(0, end - 1000))
                     raise ValueError(f"{emulator} worker exited {proc.returncode}. "
                                      + errors.read(1000).decode(errors="replace").strip())
                 if ready and not ready():

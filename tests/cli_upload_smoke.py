@@ -58,10 +58,10 @@ def main():
             with closing(sqlite3.connect(queue)) as campaign:
                 records.extend(json.loads(row[0]) for row in campaign.execute("SELECT result FROM jobs"))
             return {r["id"] for r in records if r["repeatability"]["accepted"]}
-        for _ in range(3):
+        for window in (7200, 18000, 36000):
             if accepted():
                 break
-            cli("run","--rom",rom.name,"--core",core,"--frames","3600","--game","Public Game")
+            cli("run","--rom",rom.name,"--core",core,"--frames",str(window),"--game","Public Game")
         eligible=accepted()
         assert eligible, "Host never produced a repeatable upload fixture"
         assert f"{len(eligible)} queued" in cli("uploads","status")
@@ -70,7 +70,7 @@ def main():
             payloads = [json.loads(row[0]) for row in db.execute("SELECT payload FROM score_outbox")]
             assert {r["run_id"] for r in payloads}==eligible
             assert all(r["game"] in ("Public Game", "Personal ROM") for r in payloads)
-            assert all(r["rendered_frames"] in (1800,3600) and "frame_ns" not in r for r in payloads)
+            assert all(r["rendered_frames"] in (1800,7200,18000,36000) and "frame_ns" not in r for r in payloads)
             assert rom.name not in json.dumps(payloads) and str(work) not in json.dumps(payloads)
             assert db.execute("SELECT count(*) FROM attempts WHERE outcome='completed'").fetchone()[0]>=3
         assert "0 queued" in cli("uploads","disable")

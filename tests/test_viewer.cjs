@@ -43,6 +43,7 @@ const { chromium } = require("playwright-core");
     await page.getByLabel("Game, device and frame window").selectOption({index:1});
     assert.equal(await table.count(), 1);
     await page.getByText("All published runs", {exact:true}).first().click();
+    await page.locator("#board").waitFor({state:"visible"});
     assert.equal(await page.locator("#rows tr").count(),5);
     assert.deepEqual(errors, []);
   } finally {

@@ -151,6 +151,9 @@ jobs:
         shell: bash
         run: |
           python tools/distribute.py
+          ./distribution/emubench games list
+          ./distribution/emubench games install
+          python -c "from emubench import games; from pathlib import Path; assert len(games.PACK['games'])==12; games.verify(Path('distribution/games'))"
           ./distribution/emubench suite --emulator mgba --scene easy
       - uses: actions/upload-artifact@v4
         with:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emubench"
-version = "0.7.0"
+version = "0.8.0rc1"
 dependencies = ["PyNaCl>=1.6.2,<2", "Pillow>=10", "psutil>=6"]
 requires-python = ">=3.10"
 description = "Measure uncapped emulator performance and conformance"
@@ -17,4 +17,4 @@ emubench = "emubench.cli:main"
 packages = ["emubench"]
 
 [tool.setuptools.package-data]
-emubench = ["studies.json", "report.html", "desktop.html", "chart.js", "compare.js", "native/*.c", "native/*.h", "native/CMakeLists.txt"]
+emubench = ["carter_games.json", "studies.json", "report.html", "desktop.html", "chart.js", "compare.js", "native/*.c", "native/*.h", "native/CMakeLists.txt"]

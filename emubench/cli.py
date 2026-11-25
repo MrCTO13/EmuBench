@@ -5,7 +5,7 @@ import sqlite3
 import subprocess
 import sys
 
-from . import attest
+from . import attest, games
 from . import duckstation, lab, adapters, accuracy, calibration, campaign, carter, chips, circuit, desktop, details, downloads, engines, identify, journal, scores, service, suite, uploads
 from .catalog import CATALOG, TARGETS, host_target
 from http.client import HTTPException
@@ -16,10 +16,12 @@ def main(argv=None):
     if not (sys.argv[1:] if argv is None else argv):
         return desktop.launch()
     parser = argparse.ArgumentParser(prog="emubench", description="EmuBench")
-    parser.add_argument("--version", action="version", version="Emu Bench 0.7.0")
+    parser.add_argument("--version", action="version", version="EmuBench 0.8.0-rc.1")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("desktop", help="Open the local desktop launcher")
     commands.add_parser("emulators", help="List supported emulator downloads")
+    gamepack = commands.add_parser("games", help="List or install the free Carter homebrew collection")
+    gamepack.add_argument("action", choices=("list", "install"))
     dl = commands.add_parser("download", help="Fetch and verify the latest upstream packages")
     which = dl.add_mutually_exclusive_group(required=True)
     which.add_argument("emulator", nargs="?", type=downloads.emulator_id, choices=tuple(CATALOG))
@@ -131,6 +133,12 @@ def main(argv=None):
             if not args.system_dir.is_dir():
                 raise ValueError("--system-dir requires a local directory")
             os.environ["EMUBENCH_SYSTEM_DIR"]=str(args.system_dir.resolve())
+        if args.command == "games":
+            if args.action == "list":
+                games.list_games()
+            else:
+                print(games.install() / "roms")
+            return 0
         if args.command=="mgba-perf":
             standalone.run_series(standalone.mgba,args)
             return 0

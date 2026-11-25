@@ -4,7 +4,7 @@ A local-first command-line benchmark for macOS, Windows and Linux. It measures r
 
 ## Run the public suite
 
-Download the archive for your OS and CPU. macOS, Windows and Linux each have an ARM64 and an x86-64 build. Open the executable with no arguments, or double-click **Open Emu Bench.command** on macOS. The local desktop launcher can run Carter Circuit or scan a ROM folder. The reference mGBA suite works offline after extraction.
+Download the archive for your OS and CPU. macOS, Windows and Linux each have an ARM64 and an x86-64 build. Open the executable with no arguments, or double-click **Open Emu Bench.command** on macOS. The local desktop launcher can run Carter Circuit or scan a ROM folder. After the first emulator download, the cached build and bundled Carter games work offline.
 
     emubench suite --emulator mgba
     emubench suite --emulator snes9x --scene hard --paced --checks
@@ -130,7 +130,7 @@ On Windows, Task Scheduler can invoke the same “campaign resume” command at 
     emubench campaign create carter.sqlite --emulator mgba --carter all --loop --days 7
     emubench campaign resume carter.sqlite
 
-With no ROM path, Carter mode verifies its cache and otherwise requests the exact game from the public EmuBench carter-games-v1 release. Both original homebrew files are available from the [Carter games release](https://github.com/MrCTO13/EmuBench/releases/tag/carter-games-v1). You can also supply the pinned file with --rom or run the source-built Carter Circuit using emubench suite. The downloader uses anonymous HTTPS and verifies SHA-256 before installation. Locally supplied cartridges must match the pinned edition. The open-source CLI and its release archives contain only the runner, replay definitions and reference digests. Public upstream diagnostics work independently of Carter access.
+Desktop downloads include 12 original Carter game editions for nine consoles in the games/roms folder. Run **emubench games list** to see the editions and benchmark coverage. **emubench games install** prints the verified ROM directory and fetches it anonymously when running from source. Cartervania (GBA) and Super Carter Bros. 3 (SNES) have pinned gameplay replays. Other supported editions use the local-ROM benchmark. Final Cartasy (N64) is included for play and has no timing adapter. The replay command also accepts a local pinned game with --rom. [Download the standalone Carter game pack](https://github.com/MrCTO13/EmuBench/releases/download/carter-games-v1/EmuBench-Carter-Games-v1.zip).
 
 | Console and game | Easy | Normal | Hard |
 |---|---|---|---|

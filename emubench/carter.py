@@ -5,7 +5,7 @@ from pathlib import Path
 import struct
 from urllib.error import URLError
 
-from . import downloads, engines, video
+from . import downloads, engines, games, video
 
 
 @dataclass(frozen=True)
@@ -69,6 +69,12 @@ def cartridge(console, supplied):
         if engines.digest(path) != game.digest:
             raise ValueError(f"Choose the pinned {game.title} cartridge (SHA-256 {game.digest})")
         return path
+    for root in games.roots():
+        path = root / "roms" / console / game.filename
+        if path.is_file():
+            if engines.digest(path) != game.digest:
+                raise ValueError(f"The bundled {game.title} failed its SHA-256 check")
+            return path
     directory = engines.home() / "carter" / game.digest
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / game.filename

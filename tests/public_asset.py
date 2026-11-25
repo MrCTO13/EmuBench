@@ -18,3 +18,18 @@ with tempfile.TemporaryDirectory() as tmp:
     os.environ.update(EMUBENCH_HOME=tmp,PATH="")
     for console,game in carter.GAMES.items():
         assert engines.digest(carter.cartridge(console,None))==game.digest
+
+    from emubench import games
+    root = games.install()
+    assert len(games.PACK["games"]) == 12
+    assert {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()} == set(games.FILES)
+    for console, game in carter.GAMES.items():
+        assert carter.cartridge(console, None) == root / "roms" / console / game.filename
+    first = root / games.PACK["games"][0]["path"]
+    first.write_bytes(b"damaged")
+    try:
+        games.install()
+    except ValueError as exc:
+        assert first.name in str(exc)
+    else:
+        raise AssertionError("accepted a corrupted Carter game")

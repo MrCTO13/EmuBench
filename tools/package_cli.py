@@ -26,6 +26,7 @@ if host_target()=="windows-arm64":
     extra=["--add-binary",str(named)+os.pathsep+"emubench/native/bin"]
 subprocess.run([sys.executable, "-m", "PyInstaller", "--onefile", "--clean", "--noconfirm",
                 *extra, "--paths", ".", "--name", "emubench", "--hidden-import", "_cffi_backend",
+                "--add-data", "emubench/carter_games.json" + os.pathsep + "emubench",
                 "--add-data", "emubench/studies.json" + os.pathsep + "emubench",
                 "--add-data", "emubench/desktop.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/report.html" + os.pathsep + "emubench",

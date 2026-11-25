@@ -2,6 +2,10 @@
 
 A local-first command-line benchmark for macOS, Windows and Linux. It measures rendered frames from boot with neutral input for mGBA (Game Boy Advance) and Snes9x, bsnes and a locally supplied CartsSNES core (Super NES).
 
+## Desktop app
+
+The native Mac and Windows apps use the same measurement engine and on-device history as the CLI. Open EmuBench, pick a workload and emulator, then choose **Run benchmark**. The **History** tab opens frame charts and lets you publish a selected score. The first run downloads the emulator and its diagnostic files. Windows on Arm labels runs that use an x64 emulator. [Downloads and installation](https://emubench.games/download).
+
 ## Run the public suite
 
 Download the archive for your OS and CPU. macOS, Windows and Linux each have an ARM64 and an x86-64 build. Open the executable with no arguments, or double-click **Open Emu Bench.command** on macOS. The local desktop launcher can run Carter Circuit or scan a ROM folder. After the first emulator download, the cached build and bundled Carter games work offline.

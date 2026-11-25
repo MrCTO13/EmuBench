@@ -13,8 +13,11 @@ license = {file = "LICENSE"}
 [project.scripts]
 emubench = "emubench.cli:main"
 
+[project.gui-scripts]
+emubench-desktop = "emubench.gui:main"
+
 [tool.setuptools]
 packages = ["emubench"]
 
 [tool.setuptools.package-data]
-emubench = ["carter_games.json", "studies.json", "report.html", "desktop.html", "chart.js", "compare.js", "native/*.c", "native/*.h", "native/CMakeLists.txt"]
+emubench = ["assets/emubench.png", "carter_games.json", "studies.json", "report.html", "desktop.html", "chart.js", "compare.js", "native/*.c", "native/*.h", "native/CMakeLists.txt"]

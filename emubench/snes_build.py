@@ -36,7 +36,10 @@ def install(emulator, revision=None, target="windows-arm64"):
         else:
             if not make:
                 raise ValueError("Install Xcode Command Line Tools to build the current SNES core from source")
-            flags=["platform=osx","CC=clang","CXX=clang++"]
+            arch = "arm64" if target == "macos-arm64" else "x86_64"
+            # The old 10.1 Makefile default hides modern stat fields on Intel SDKs.
+            flags = ["platform=osx", f"CC=clang -arch {arch}", f"CXX=clang++ -arch {arch}",
+                     "fpic=-fPIC -mmacosx-version-min=11.0"]
         base.mkdir(parents=True,exist_ok=True)
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             source=Path(tmp)/"upstream"

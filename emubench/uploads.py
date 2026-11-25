@@ -94,7 +94,7 @@ def claim(force):
         token = str(uuid.uuid4())
         # Covers the publisher's SQLite lock wait and both bounded GitHub requests.
         db.execute("UPDATE upload_settings SET lease=?,lease_until=?", (token, now + 180))
-        return token, setting[0], item[0], json.loads(item[1])
+        return token, setting[0], item[0], json.loads(item[1]), destination_for(db)
 
 
 def finish(token, run_id, failures, error=None):
@@ -115,10 +115,8 @@ def flush(force=False, limit=None):
         claimed = claim(force)
         if not claimed:
             return True
-        token, failures, run_id, summary = claimed
+        token, failures, run_id, summary, target = claimed
         try:
-            with journal.database() as db:
-                target = destination_for(db)
             url = (service.publish if target == "service" else scores.publish)(summary)
         except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, subprocess.SubprocessError) as exc:
             error = "GitHub CLI unavailable" if isinstance(exc, FileNotFoundError) else type(exc).__name__

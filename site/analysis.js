@@ -5,7 +5,7 @@ function build(r){return r.emulator+" "+r.version+" · "+r.core_sha256.slice(0,1
 function group(rows,key){const m=new Map();for(const r of rows){const k=key(r);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;}
 function median(values){const v=values.slice().sort((a,b)=>a-b),i=Math.floor(v.length/2);return v.length%2?v[i]:(v[i-1]+v[i])/2;}
 function comparison(rows,mode) {
-  const ok=rows.filter(r=>r.device_id && (mode!=="devices" || r.edition || r.profile.includes("-circuit-")));
+  const ok=rows.filter(r=>!r.outcome && r.device_id && (mode!=="devices" || r.edition || r.profile.includes("-circuit-")));
   const key=r=>workload(r)+"|"+(mode==="devices"?r.emulator+"|"+(r.source_commit||r.core_sha256):device(r)+"|"+r.worker_sha256);
   const variants=r=>mode==="devices"?device(r):build(r);
   return [...group(ok,key).values()].filter(g=>group(g,variants).size>=2);
@@ -19,22 +19,26 @@ function interval(values) {
 }
 // Each installation casts one vote per build pair, with equal log weight for each required scene.
 function ranking(rows,baseline,challenger) {
-  const groups=group(rows.filter(r=>r.device_id && /^snes-circuit-(easy|normal|hard)-v1$/.test(r.profile)),r=>device(r)+"|"+r.worker_sha256);
-  const devices=new Map(), matched=[];
+  const hashes=new Set(rows.filter(r=>!r.outcome && [baseline,challenger].includes(build(r))).map(r=>r.core_sha256));
+  const relevant=rows.filter(r=>hashes.has(r.core_sha256));
+  const groups=group(relevant.filter(r=>r.device_id && /^snes-circuit-(easy|normal|hard)-v1$/.test(r.profile)),r=>device(r)+"|"+r.worker_sha256);
+  const devices=new Map(), matched=[];let complete=0;
   for(const runs of groups.values()){
     const ratios=[], links=[];
     for(const level of ["easy","normal","hard"]){
       const part=runs.filter(r=>r.profile==="snes-circuit-"+level+"-v1");
+      if(part.some(r=>r.outcome==="failed"))break;
       const a=part.filter(r=>build(r)===baseline), b=part.filter(r=>build(r)===challenger);
       if(!a.length||!b.length||![...a,...b].every(r=>r.average_fps>0))break;
       ratios.push(median(b.map(r=>r.average_fps))/median(a.map(r=>r.average_fps)));links.push(...a,...b);
     }
     if(ratios.length===3){
+      complete++;
       const id=runs[0].device_id;
       if(!devices.has(id))devices.set(id,[]);
       devices.get(id).push(Math.exp(ratios.reduce((sum,x)=>sum+Math.log(x),0)/3));matched.push(...links);
     }
   }
   const vals=[...devices.values()].map(median);
-  return {n:vals.length,ratio:vals.length?median(vals):null,interval:interval(vals),matched};
+  return {completed:complete,eligible:groups.size,failed:relevant.filter(r=>r.outcome==="failed").length,n:vals.length,ratio:vals.length?median(vals):null,interval:interval(vals),matched};
 }

@@ -65,7 +65,9 @@ def cartridge(name):
 
 
 def verdict(capture):
-    _,_,rgb=video.rgb_frame(capture)
+    width,height,rgb=video.rgb_frame(capture)
+    if (width,height)!=(256,224):
+        return "unresolved"
     palette=set(zip(*[iter(rgb)]*3))
     if palette=={(0,248,0)}:
         return "pass"

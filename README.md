@@ -1,6 +1,27 @@
 # Emu Bench
 
-Presented by Carts. A local-first command-line benchmark for macOS, Windows and Linux. It measures rendered frames from boot with neutral input for mGBA (Game Boy Advance) and Snes9x and bsnes (Super NES).
+Presented by Carts. A local-first command-line benchmark for macOS, Windows and Linux. It measures rendered frames from boot with neutral input for mGBA (Game Boy Advance) and Snes9x, bsnes and a locally supplied CartsSNES core (Super NES).
+
+## Run the public suite
+
+Download the archive for your OS and CPU. macOS, Windows and Linux each have an ARM64 and an x86-64 build. Open the executable with no arguments, or double-click **Open Emu Bench.command** on macOS. The local desktop launcher can run Carter Circuit or scan a ROM folder. The reference mGBA suite works offline after extraction.
+
+    emubench suite --emulator mgba
+    emubench suite --emulator snes9x --scene hard --paced --checks
+    emubench suite --emulator cartssnes --core "/path/to/cartssnes_libretro.dylib"
+    emubench chips --emulator bsnes
+    emubench catalog install snes
+    emubench catalog match snes --rom "My Game.sfc"
+
+Carter Circuit v1 has easy, normal and hard scenes on both GBA and SNES. The CLI builds the original code and graphics locally. Each scene measures 600 rendered frames after 120 warm-up frames and checks both boundary images. Each SNES suite also tests the SA-1 signed multiplier and a Super FX immediate register load. The optional paced pass uses the core’s declared refresh and audio sample rates. A missed deadline is a frame completed after its scheduled end. Missing audio sample frames count headless buffer starvation after an initial two-frame reserve. Physical display presentation and device audio are outside this measurement.
+
+The public results browser supports game search, matched emulator and hardware comparisons, score timelines, campaign links, build history and matched SNES rankings. The browser explains coverage and the estimator used. Raw cartridge hashes, filenames, paths and frame logs stay local. Each upload includes a random installation token. Known editions can be shared across machines with `--share-title` after installing the catalog. Its public edition identifier derives from the catalog entry name. [Public scoreboard and methodology](https://emubench-scores.mrcto.chatgpt.site/method).
+
+## Minimum-duration pilot
+
+On a reserved idle host, run the command below per core and representative workload. The default trial randomizes 600, 1,800, 3,600 and 10,800 frame windows in each of eight independent cold-start blocks with the same warm-up. A report resumes when invoked again with identical parameters. Each candidate’s paired median ratio and 95% bootstrap interval must lie within ±1% for mean throughput and ±5% for each tail. Longer candidates must also pass. If any relevant workload, device or build is inconclusive, retain the reference duration there. A boot-only pilot applies to the boot sequence. Run separate Carter scenes and representative gameplay routes before generalizing to games, regions or enhancement chips.
+
+    emubench calibrate --emulator snes9x --core "/path/to/core" --scene hard --dedicated --out pilot.json
 
 ## Quick start
 
@@ -14,7 +35,7 @@ emubench publish my-run.json --game "My Game" --preview
 emubench publish my-run.json --game "My Game"
 ```
 
-The release CLI can run all three supported measurement cores without a compiler. Download commands contact upstream directly and keep packages under your per-user downloads directory. The complete shortlist currently has 18 emulator projects. Automatic selection prefers a matching upstream desktop package and otherwise fetches the current Libretro Buildbot core. Use `download snes9x --channel core` to fetch the timing library explicitly. DuckStation offers a desktop download only. Each entry prints the package kind, build and local path. Keep that core path to repeat an exact build offline with `--core`. Desktop downloads are saved for manual installation. Check the upstream project's OS requirements when opening a desktop app.
+The portable release includes the reference mGBA core for offline use. Windows ARM64 builds the latest SNES cores from upstream with Git, GNU make and Zig. Other supported desktop targets can fetch the native SNES cores from Libretro Buildbot. Download commands contact upstream directly and keep packages under your per-user downloads directory. The complete shortlist currently has 18 emulator projects. Automatic selection prefers a matching upstream desktop package and otherwise fetches the current Libretro Buildbot core. Use `download snes9x --channel core` to fetch the timing library explicitly. DuckStation offers a desktop download only. Each entry prints the package kind, build and local path. Keep that core path to repeat an exact build offline with `--core`. Desktop downloads are saved for manual installation. Check the upstream project's OS requirements when opening a desktop app.
 
     emubench download --all --list-only
     emubench download mgba --channel desktop --version 0.10.5
@@ -34,18 +55,17 @@ Average FPS is the frame count divided by the total elapsed seconds. The 1% low 
 
 ## Sharing
 
-To upload new scores automatically from this device, sign in to GitHub once and enable uploads:
+To upload new scores to the public service from this device, enable uploads. No account is required.
 
-    gh auth login --hostname github.com
     emubench uploads enable
     emubench run --rom "/path/to/My Game.gba" --latest-core --game "My Game"
     emubench uploads status
 
-Single runs, Carter scenes and campaign jobs save locally first. When uploads are enabled, each completed result queues a public summary for the existing GitHub scoreboard under your signed-in account. Carter scenes use their official titles. Personal runs use the public title you enter with `--game` or “Personal ROM”. Local filenames, cartridge data, ROM hashes, directories, raw frame timings and device logs stay on the machine. The public summary includes the emulator build, OS, CPU, whole-number FPS, a grouped timing curve and any diagnostic outcomes.
+Single runs, Carter scenes and campaign jobs save locally first. When uploads are enabled, each completed result queues a public summary for the selected scoreboard. Carter scenes use their official titles. Personal runs use the public title you enter with `--game` or “Personal ROM”. Local filenames, cartridge data, ROM hashes, directories, raw frame timings and device logs stay on the machine. The public summary includes the emulator build, OS, CPU, whole-number FPS, a grouped timing curve and any diagnostic outcomes.
 
 Offline runs keep measuring. Later runs and campaign iterations retry queued summaries with a delay after failures. Run `emubench uploads sync` to retry immediately, including after the last run of a campaign. The CLI must be running to send pending scores. `emubench uploads disable` stops new uploads and drops pending summaries. A request already in flight may finish. Previously completed private runs require a separate manual submission. Each score carries a run ID for reconciling retries.
 
-A run saves a private JSON trace with frame times and ROM and build hashes. `publish --preview` shows exactly which fields may leave the machine. Publishing uses the GitHub CLI (`gh auth login`) to create a public, self-reported score in this repository under the submitting account. The optional display title defaults to “Personal ROM”. The public record omits the ROM, its filename, its hash, local paths and raw frame times. Manual publication requires interactive confirmation or explicit `--yes`. [Browse submitted scores](https://github.com/MrCTO13/EmuBench/issues?q=is%3Aissue%20in%3Atitle%20%22Score%22).
+A run saves a private JSON trace with frame times and ROM and build hashes. `publish --preview` shows exactly which fields may leave the machine. Publishing creates a permanent, anonymous self-reported score URL. Use `--destination github` to publish a GitHub issue instead. Existing GitHub enrollments retain their original destination. The optional display title defaults to “Personal ROM”. The public record omits the ROM, its filename, its hash, local paths and raw frame times. Manual publication requires interactive confirmation or explicit `--yes`. [Browse submitted scores](https://emubench-scores.mrcto.chatgpt.site).
 
 A random comparison token is assigned per exact ROM in the local device journal. Sharing it allows readers to link runs of that image from the same journal. Keep one journal per physical device. Published runs remain self-reported.
 
@@ -82,7 +102,7 @@ The queue snapshots the library at creation. Identical copies within a system sh
 
 Automatic uploads share a summary for each completed measurement. Folder scores use the public title **Personal ROM** and an opaque per-device comparison ID. Paths, filenames, ZIP members and cartridge contents stay local. `--wait-uploads` keeps the process running after measurement until the device's pending summaries have been sent, including when connectivity returns. Ctrl-C and resume later to continue. Use `campaign status library.sqlite` for failed jobs and `uploads status` for pending submissions.
 
-Create a queue once on the test device. Add additional files with repeated --rom arguments. Each device pins the selected core and hashes its own ROMs. Resume it whenever the device is available.
+Create a queue once on the test device. Add additional files with repeated --rom arguments. For a looping public suite use `emubench campaign create suite.sqlite --circuit all --emulator all --carts-core "/path/to/cartssnes_libretro" --loop --days 14`. Each device pins the selected core and hashes its own ROMs. Resume it whenever the device is available.
 
     emubench campaign create nightly.sqlite --rom "My Game.gba" --version 0.10.5 --loop --days 14
     emubench campaign resume nightly.sqlite

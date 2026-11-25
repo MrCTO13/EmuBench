@@ -9,3 +9,7 @@ The Carts and Emu Bench wordmarks identify the presenter and project. The header
 Desktop releases contain the Emu Bench tools and score viewer. Emulator packages are downloaded directly from the selected upstream project or Libretro Buildbot to the user’s machine and retain their upstream terms.
 
 Cartervania and Super Carter Bros. 3 are Carts game projects with their own source and distribution terms. Emu Bench supplies controller replays and checkpoint digests. Accuracy workloads are fetched from [GBA Tests](https://github.com/jsmolka/gba-tests) and [SNES tests](https://github.com/gilyon/snes-tests) under their upstream terms. The reader recognizes the terminal pass/fail messages defined by those projects.
+
+Beginning with 0.6, the reference directory includes an unmodified mGBA 0.10.5 libretro library, its license, component notices and matching buildable source in mgba-source.zip. The upstream cinema regression corpus is omitted. mGBA is copyright Jeffrey Pfau and contributors. See LICENSE-mGBA.txt and the component notices in the reference directory. To rebuild, extract the source and use the libretro CMake flags in emubench/engines.py. Any compatible replacement library can be selected with --core.
+
+Carter Circuit and the SA-1 and Super FX probe programs and graphics in this repository are original MIT-licensed source. Users build them locally. The optional edition catalog comes directly from the pinned libretro-database No-Intro metadata. CartsSNES remains a separately supplied Carts core.

@@ -11,7 +11,7 @@ import threading
 import uuid
 import webbrowser
 
-from . import catalog, engines, scores
+from . import catalog, engines, journal, library, scores
 
 
 def invocation():
@@ -45,6 +45,24 @@ def job(body):
             ["campaign","resume",str(queue)]]
 
 
+def estimate(body):
+    job(body)
+    peer=body["emulator"]
+    if body["mode"]=="suite":
+        count,frames=3,720
+    else:
+        items=library.discover([Path(body["folder"]).expanduser().resolve()],peer)
+        count,frames=len(items),1920
+    with journal.database() as db:
+        observations=db.execute("SELECT avg FROM attempts WHERE outcome='completed' AND build LIKE ? AND avg>0 ORDER BY started DESC LIMIT 9",
+                                (scores.ADAPTERS[peer][0]+" %",)).fetchall()
+    if not observations:
+        return f"{count} jobs · {count*frames:,} console frames. A wall-time estimate becomes available after a local run."
+    import statistics
+    seconds=count*frames/statistics.median(row[0] for row in observations)
+    return f"{count} jobs · about {max(1,round(seconds)):,} seconds of emulation, plus startup, conformance and downloads."
+
+
 def launch(open_browser=True):
     secret = secrets.token_urlsafe(32)
     lock = threading.Lock()
@@ -76,7 +94,7 @@ def launch(open_browser=True):
             self.end_headers()
             self.wfile.write(data)
         def valid(self):
-            return self.headers.get("Host")==authority and self.path in ("/"+secret, "/"+secret+"/state")
+            return self.headers.get("Host")==authority and self.path in ("/"+secret, "/"+secret+"/state","/"+secret+"/estimate")
         def do_GET(self):
             if not self.valid():
                 return self.send_error(404)
@@ -93,7 +111,10 @@ def launch(open_browser=True):
                 length=int(self.headers.get("Content-Length","0"))
                 if not 0 < length < 8192:
                     raise ValueError("Invalid request size")
-                commands=job(json.loads(self.rfile.read(length)))
+                body=json.loads(self.rfile.read(length))
+                if self.path.endswith("/estimate"):
+                    return self.send_body(200,estimate(body).encode(),"text/plain; charset=utf-8")
+                commands=job(body)
                 with lock:
                     if state["active"]:
                         return self.send_body(409,b"Another job is running","text/plain")

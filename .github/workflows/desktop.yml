@@ -39,6 +39,12 @@ jobs:
         run: cygpath -w /usr/bin >> "$GITHUB_PATH"
       - name: Test calculations and publication
         run: python -m unittest discover -s tests
+      - name: Exercise score API, pagination, matching and ranking
+        if: matrix.platform == 'linux-x64'
+        shell: bash
+        run: |
+          python site/build.py "$RUNNER_TEMP/worker.mjs"
+          node --experimental-sqlite tests/test_service.mjs "$RUNNER_TEMP/worker.mjs"
       - name: Install the reference mGBA release
         run: python -m emubench install mgba --version 0.10.5
       - name: Package native CLI
@@ -103,10 +109,19 @@ jobs:
             ./dist/emubench accuracy --emulator "$emulator" --out "$RUNNER_TEMP/$emulator-checks.json" || test "$?" = 1
           done
           python -c "import os,json,pathlib; base=pathlib.Path(os.environ['RUNNER_TEMP']); results=[json.loads((base/(key+'-checks.json')).read_text()) for key in ('mgba','snes9x','bsnes')]; assert [len(r['checks']) for r in results]==[3,2,2]; assert all(r['suite']=='cpu-memory-v1' and all(c in ('pass','fail') for c in r['checks'].values()) for r in results)"
-      - name: Assemble distribution
+      - name: Verify actual paced delivery and resumable Circuit campaigns
         shell: bash
         run: |
-          python -c "import shutil, pathlib; dest=pathlib.Path('distribution'); dest.mkdir(); [shutil.copy2(p, dest) for p in pathlib.Path('dist').iterdir() if p.is_file()]; shutil.copytree('dist/third-party',dest/'third-party'); [shutil.copy2(p,dest) for p in ['README.md','LICENSE','THIRD-PARTY.md']]; shutil.copy2('emubench/native/libretro.h',dest/'libretro-header.h'); shutil.make_archive('emubench-${{ matrix.platform }}','zip',dest)"
+          ./dist/emubench suite --emulator mgba --version 0.10.5 --scene easy --paced --out-dir "$RUNNER_TEMP/paced"
+          python -c "import glob,json,os; p=json.load(open(glob.glob(os.path.join(os.environ['RUNNER_TEMP'],'paced','*.json'))[0]))['paced']; assert p['frames']==600 and 0<=p['missed_deadlines']<=600 and 50<p['refresh_hz']<65"
+          ./dist/emubench campaign create "$RUNNER_TEMP/circuit.sqlite" --circuit easy --emulator mgba --version 0.10.5 --dedicated
+          ./dist/emubench campaign resume "$RUNNER_TEMP/circuit.sqlite"
+          ./dist/emubench campaign resume "$RUNNER_TEMP/circuit.sqlite"
+      - name: Assemble native release and smoke-test offline reference
+        shell: bash
+        run: |
+          python tools/distribute.py
+          ./distribution/emubench suite --emulator mgba --scene easy
       - uses: actions/upload-artifact@v4
         with:
           name: emubench-${{ matrix.platform }}

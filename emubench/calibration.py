@@ -4,11 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 import random
+import time
 from statistics import median
 import tempfile
 import os
 
-from . import circuit, engines, scores
+from . import campaign, circuit, engines, scores
 
 
 def metrics(times):
@@ -44,6 +45,8 @@ def assess(rows, candidates, repeats):
 
 
 def execute(args):
+    ready=campaign.idle_gate({"dedicated":args.dedicated,"idle_seconds":300,
+                              "idle_check":str(args.idle_check.resolve(strict=True)) if args.idle_check else None})
     candidates=sorted(set(args.windows))
     if not candidates or not all(100<=n<10800 for n in candidates) or not 5<=args.blocks<=100:
         raise ValueError("Use 100–10,799 candidate frames and 5–100 independent blocks")
@@ -78,7 +81,15 @@ def execute(args):
                 continue
             if engines.digest(core)!=settings["core"]:
                 raise ValueError("Core changed during calibration")
-            output,_=scores.run_worker(worker,core,data,120,frames,600,None,scores.ADAPTERS[args.emulator][0])
+            while True:
+                if ready():
+                    try:
+                        output,_=scores.run_worker(worker,core,data,120,frames,600,ready,scores.ADAPTERS[args.emulator][0])
+                        break
+                    except scores.InterruptedWindow:
+                        pass
+                print("Waiting for an uninterrupted idle window",flush=True)
+                time.sleep(15)
             times=list(map(int,output[5:]))
             if len(times)!=frames:
                 raise ValueError("Incomplete calibration evidence")

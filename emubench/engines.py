@@ -145,8 +145,26 @@ def worker():
     return dest / name
 
 
+def bundled_reference():
+    if not getattr(sys, "frozen", False):
+        return None
+    folder = Path(sys.executable).resolve().parent / "reference"
+    meta_file = folder / "build.json"
+    if not meta_file.is_file():
+        return None
+    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    path = folder / ("mgba_libretro" + LIB[platform.system()])
+    if meta["tag"] != REFERENCE or meta["commit"] != REFERENCE_COMMIT or digest(path) != meta["sha256"]:
+        raise ValueError("Packaged reference core failed verification")
+    return path, meta
+
+
 def install(value):
     tag = release_tag(value)
+    if tag == REFERENCE:
+        bundled = bundled_reference()
+        if bundled:
+            return bundled
     parent = home() / "engines" / platform_id() / "mgba"
     dest = parent / tag
     name = "mgba_libretro" + LIB[platform.system()]

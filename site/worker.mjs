@@ -9,6 +9,14 @@ const integer = (x, min, max) => Number.isSafeInteger(x) && x >= min && x <= max
 const plain = (v, len, rx) => typeof v === "string" && v.length > 0 && v.length <= len && rx.test(v);
 const emulators = {mGBA:"gba", Snes9x:"snes", bsnes:"snes", CartsSNES:"snes"};
 export function validate(r) {
+  if (r?.outcome==="failed") {
+    const profile=Object.hasOwn(PROFILES,r.profile) && PROFILES[r.profile];
+    requireValue(fields(r,["run_id","device_id","campaign_id","outcome","reason","game","profile","emulator","core_sha256","worker_sha256","os","arch","cpu"])
+      && profile && r.profile.includes("-circuit-") && r.game===profile.title && Object.hasOwn(emulators,r.emulator) && profile.console===emulators[r.emulator]
+      && ["timeout","checkpoint","measurement"].includes(r.reason) && ["Darwin","Linux","Windows"].includes(r.os) && /^(arm64|aarch64|amd64|x86_64)$/i.test(r.arch)
+      && [r.device_id,r.campaign_id,r.run_id].every(x=>plain(x,36,UUID)) && [r.core_sha256,r.worker_sha256].every(x=>plain(x,64,SHA)) && plain(r.cpu,160,CPU));
+    return r;
+  }
   requireValue(fields(r,["run_id","game","profile","emulator","version","source_commit","core_sha256","worker_sha256",
     "os","arch","cpu","warmup_frames","rendered_frames","average_fps","low_1pct_fps","high_1pct_fps","timing",
     "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips"]));

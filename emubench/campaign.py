@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from . import accuracy, carter, downloads, engines, journal, library, scores, uploads
+from . import accuracy, carter, chips, circuit, downloads, engines, journal, library, scores, uploads
 
 
 def arguments(commands):
@@ -24,6 +24,8 @@ def arguments(commands):
     new.add_argument("--rom", type=Path, action="append", help="Local ROM, ZIP or directory (repeatable)")
     new.add_argument("--rom-dir", type=Path, action="append", help="Recursively scan a ROM library (repeatable)")
     new.add_argument("--share-title", action="store_true", help="Share known catalog names and editions")
+    new.add_argument("--circuit", choices=("all",*circuit.LEVELS), help="Queue the source-built public scenes")
+    new.add_argument("--carts-core", type=Path, help="Include this CartsSNES library in an all-emulator queue")
     new.add_argument("--carter", choices=("all","easy","normal","hard"), help="Queue pinned Carter scenes")
     new.add_argument("--emulator", choices=(*scores.ADAPTERS, "all"),
                      help="Select one emulator or all compatible ones (default for directories)")
@@ -53,7 +55,7 @@ def arguments(commands):
 
 
 def create(args):
-    if args.carter and (args.frames is not None or args.warmup_frames is not None):
+    if (args.circuit or args.carter) and (args.frames is not None or args.warmup_frames is not None):
         raise ValueError("A Carter scene defines its own setup and measurement window")
     args.frames = 1800 if args.frames is None else args.frames
     args.warmup_frames = 120 if args.warmup_frames is None else args.warmup_frames
@@ -79,7 +81,20 @@ def create(args):
         raise ValueError("Select one emulator when pinning a particular core or version")
     if args.version and emulator != "mgba":
         raise ValueError("For SNES select --core PATH or --latest-core")
-    if args.carter:
+    if args.carts_core and (emulator!="all" or args.core):
+        raise ValueError("--carts-core requires --emulator all")
+    if args.circuit:
+        if paths or args.carter:
+            raise ValueError("Circuit generates its own cartridges")
+        peers = ["mgba","snes9x","bsnes"] + (["cartssnes"] if args.carts_core else []) if emulator=="all" else [emulator]
+        workloads=[]
+        for peer in peers:
+            for scene in circuit.SCENES:
+                if scene.console!=("gba" if peer=="mgba" else "snes") or args.circuit not in ("all",scene.level):
+                    continue
+                rom=circuit.cartridge(scene.console,scene.level)
+                workloads.append(dict(path=str(rom),sha256=scene.digest,emulator=peer,scene=scene.profile))
+    elif args.carter:
         if batch or emulator == "all" or len(paths) > 1:
             raise ValueError("A Carter queue accepts one emulator and one pinned cartridge")
         console = "gba" if emulator == "mgba" else "snes"
@@ -90,6 +105,8 @@ def create(args):
         raise ValueError("Supply --rom, --rom-dir or --carter")
     elif batch or emulator == "all":
         workloads = library.discover(paths, emulator)
+        if args.carts_core:
+            workloads.extend([dict(w,emulator="cartssnes") for w in workloads if w["emulator"]=="snes9x"])
     else:
         workloads = []
         for path in dict.fromkeys(paths):
@@ -99,9 +116,11 @@ def create(args):
     cores = {}
     for peer in dict.fromkeys(w["emulator"] for w in workloads):
         tag = commit = None
-        if args.core:
+        if peer=="cartssnes" and args.carts_core:
+            core=args.carts_core.expanduser().resolve(strict=True)
+        elif args.core:
             core = args.core.expanduser().resolve(strict=True)
-        elif peer == "mgba" and (args.version or not (args.latest_core or args.carter or batch or emulator == "all")):
+        elif peer == "mgba" and (args.version or args.circuit and not args.latest_core or not (args.latest_core or args.carter or batch or emulator == "all")):
             core, meta = engines.install(args.version or engines.REFERENCE)
             tag, commit = meta["tag"], meta["commit"]
         else:
@@ -111,6 +130,9 @@ def create(args):
     plan = dict(share_title=args.share_title, campaign_id=str(uuid.uuid4()), workloads=workloads, cores=cores, warmup=args.warmup_frames, frames=args.frames,
                 timeout=args.timeout, loop=args.loop, days=args.days, idle_check=gate,
                 dedicated=args.dedicated, idle_seconds=args.idle_seconds)
+    if args.circuit:
+        plan["worker_sha256"]=engines.digest(engines.worker())
+        plan["chips"]={peer:chips.run(peer,Path(build["path"])) for peer,build in cores.items() if peer!="mgba"}
     if args.carter:
         plan["accuracy"] = accuracy.run(emulator, Path(cores[emulator]["path"]))
     dest = args.queue.expanduser().resolve()
@@ -221,12 +243,20 @@ def resume(db, path, plan):
                 print(f"Round {number}, job {job_id}: {local_name} ({emulator})", flush=True)
                 try:
                     with journal.attempt(Path(local_name), build["tag"] or "local core", f"round {number}, job {job_id}") as (run_id, started):
-                        scene = carter.PROFILES[workload["scene"]] if "scene" in workload else None
+                        public_scene = circuit.PROFILES.get(workload.get("scene"))
+                        scene = public_scene or carter.PROFILES.get(workload.get("scene"))
+                        if "scene" in workload and not scene:
+                            raise ValueError("Unrecognized campaign scene")
                         result = scores.measure(rom, None, Path(build["path"]), scene.warmup if scene else plan["warmup"],
-                                                carter.FRAMES if scene else plan["frames"], plan["timeout"],
+                                                circuit.FRAMES if public_scene else carter.FRAMES if scene else plan["frames"], plan["timeout"],
                                                 lambda: time.time() < deadline and ready(), workload["sha256"],
                                                 emulator, scene=scene, member=workload.get("member"))
-                        if scene:
+                        if public_scene:
+                            if result["worker_sha256"] != plan["worker_sha256"]:
+                                raise ValueError("Circuit worker changed since the campaign was created")
+                            if emulator in plan["chips"]:
+                                result["chips"]=plan["chips"][emulator]
+                        elif scene:
                             result["accuracy"] = accuracy.validated(plan["accuracy"],scene.console,
                                                                    result["core_sha256"],result["worker_sha256"])
                         if result["core_sha256"] != build["sha256"]:

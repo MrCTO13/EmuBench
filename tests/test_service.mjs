@@ -1,0 +1,34 @@
+// Use actual SQLite SQL and a local D1-compatible binding; CI never publishes to the live service.
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { readFileSync, readdirSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import vm from 'node:vm';
+const worker=(await import(pathToFileURL(process.argv[2]))).default;
+const sql=new DatabaseSync(':memory:');
+sql.exec(readFileSync('site/drizzle/'+readdirSync('site/drizzle').find(n=>n.endsWith('.sql')),'utf8'));
+const db={prepare(query){const op=sql.prepare(query);return {bind(...args){return {all:()=>({results:op.all(...args)}),first:()=>op.get(...args),run:()=>({meta:op.run(...args)})}}}}};
+const fetch=(path,method='GET',value)=>worker.fetch(new Request('https://example.test'+path,{method,headers:{'content-type':'application/json'},body:method==='GET'?undefined:JSON.stringify(value)}),{DB:db});
+const id=randomUUID(), device=randomUUID(), campaign=randomUUID(), token=randomUUID();
+const score={run_id:id,device_id:device,campaign_id:campaign,comparison_id:token,game:'Test public title',profile:'snes-boot-no-input-v1',emulator:'Snes9x',version:'1.63',source_commit:null,
+ core_sha256:'a'.repeat(64),worker_sha256:'b'.repeat(64),os:'Windows',arch:'ARM64',cpu:'Example CPU',rendered_frames:100,warmup_frames:120,average_fps:100,low_1pct_fps:100,high_1pct_fps:100,
+ timing:[{start_ms:0,end_ms:1000,avg_fps:100,worst_fps:100,worst_ms:10,worst_frame:1,worst_at_ms:10}]};
+assert.equal((await fetch('/api/runs','POST',score)).status,201);
+assert.equal((await fetch('/api/runs','POST',score)).status,200);
+assert.equal((await fetch('/api/runs','POST',{...score,game:'Different'})).status,409);
+assert.equal((await fetch('/api/runs','POST',{...score,rom_sha256:'private'})).status,400);
+assert.equal((await fetch('/api/runs','POST',{...score,profile:'snes-circuit-hard-v1'})).status,400);
+assert.equal((await fetch('/api/runs','POST',{...score,timing:[{...score.timing[0],path:'private'}]})).status,400);
+assert.equal((await (await fetch('/api/run/'+id)).json()).run_id,id);
+for(let i=0;i<103;i++)assert.equal((await fetch('/api/runs','POST',{...score,run_id:randomUUID()})).status,201);
+const first=await (await fetch('/api/runs?campaign='+campaign)).json();
+assert.equal(first.rows.length,100);assert.ok(first.next);assert.ok(!first.rows[0].timing);
+const page2=await (await fetch('/api/runs?after='+first.next)).json();
+assert.equal(page2.rows.length,4);assert.equal(new Set([...first.rows,...page2.rows].map(r=>r.run_id)).size,104);
+assert.equal((await (await fetch('/api/runs?q=missing')).json()).rows.length,0);
+const ctx=vm.createContext({});
+vm.runInContext(readFileSync('site/analysis.js','utf8')+readFileSync('site/demo.js','utf8'),ctx);
+const res=vm.runInContext('(()=>{const rows=demoRows();const builds=[...new Set(rows.filter(r=>r.emulator==="CartsSNES").map(build))];const a=ranking(rows,...builds);const f=rows.find(r=>r.profile.includes("-circuit-")&&r.emulator==="CartsSNES");const b=ranking([...rows,{...f,outcome:"failed"}],...builds);return [a.n,a.interval,b.n,b.failed,comparison(rows,"devices").length,comparison(rows,"emulators").length]})()',ctx);
+assert.deepEqual(Array.from(res).slice(0,4),[2,null,1,1]);assert.ok(res[4]>0 && res[5]>0);
+console.log('Score creation, duplicate recovery, validation, pagination, failure coverage and two-way matching passed.');

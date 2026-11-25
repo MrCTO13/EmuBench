@@ -5,7 +5,7 @@ import sqlite3
 import subprocess
 import sys
 
-from . import accuracy, calibration, campaign, carter, chips, circuit, desktop, details, downloads, engines, identify, journal, scores, service, uploads
+from . import accuracy, calibration, campaign, carter, chips, circuit, desktop, details, downloads, engines, identify, journal, scores, service, suite, uploads
 from .catalog import CATALOG, TARGETS, host_target
 from http.client import HTTPException
 from zipfile import BadZipFile
@@ -75,6 +75,7 @@ def main(argv=None):
     official.add_argument("--scene", choices=("all", *circuit.LEVELS), default="all")
     official.add_argument("--checks", action="store_true", help="Also run the pinned upstream CPU/memory diagnostics")
     official.add_argument("--out-dir", type=Path)
+    official.add_argument("--expect-worker", metavar="SHA256", help="Require the matching timing worker binary")
     official.add_argument("--expect-core", metavar="SHA256", help="Require an exact emulator binary")
     diag = commands.add_parser("accuracy", help="Run the named upstream CPU/memory conformance programs")
     diag.add_argument("--out", type=Path, help="Write the diagnostic results as JSON")
@@ -98,6 +99,9 @@ def main(argv=None):
     pilot.add_argument("--blocks", type=int, default=8)
     pilot.add_argument("--windows", type=int, nargs="+", default=[600,1800,3600])
     pilot.add_argument("--seed", type=int, default=4171)
+    gate=pilot.add_mutually_exclusive_group()
+    gate.add_argument("--idle-check", type=Path, help="Require this program to report an idle device throughout each trial")
+    gate.add_argument("--dedicated", action="store_true", help="Reserve this host for the physical pilot")
     pilot.add_argument("--out", required=True, type=Path)
     campaign.arguments(commands)
     args = parser.parse_args(argv)
@@ -131,6 +135,8 @@ def main(argv=None):
                                    args.channel, args.version, args.list_only)
         elif args.command in ("carter","suite","accuracy","chips"):
             release = None
+            if args.command == "suite" and args.emulator == "mgba" and not args.core and not args.version and engines.bundled_reference():
+                args.version = engines.REFERENCE
             if args.version:
                 if args.emulator != "mgba":
                     raise ValueError("For a specific SNES build, supply its libretro library with --core")
@@ -145,36 +151,7 @@ def main(argv=None):
             if args.command == "carter":
                 rom = carter.cartridge(console, args.rom)
             if args.command == "suite":
-                if args.expect_core and engines.digest(core) != args.expect_core:
-                    raise ValueError("Selected core differs from the requested binary digest")
-                tested_core = engines.digest(core)
-                extra = {"chips": chips.run(args.emulator, core)} if console == "snes" else {}
-                if args.checks:
-                    extra["accuracy"] = accuracy.run(args.emulator, core)
-                for scene in circuit.SCENES:
-                    if scene.console != console or args.scene not in ("all", scene.level):
-                        continue
-                    rom = circuit.cartridge(console, scene.level)
-                    with journal.attempt(rom, core.name, scene.title) as (run_id, start):
-                        result = scores.measure(rom, None, core, scene.warmup, circuit.FRAMES, 120,
-                                                expected_rom=scene.digest, emulator=args.emulator, scene=scene)
-                        if result["core_sha256"] != tested_core:
-                            raise ValueError("Core changed during the suite")
-                        result.update(extra)
-                        if args.paced:
-                            result["paced"] = scores.paced_pass(result, core, rom, 120)
-                        if release:
-                            if result["core_sha256"] != release["sha256"] or result["version"] != release["tag"]:
-                                raise ValueError("Measured core differs from the requested release")
-                            result["source_commit"] = release["commit"]
-                        result.update(id=run_id, started_utc=start, finished_utc=journal.now(), local_name=scene.title)
-                        dest = args.out_dir / (scene.profile + "-" + run_id + ".json") if args.out_dir else None
-                        path = scores.save(result, dest)
-                        journal.complete(result, path)
-                    print(f"{scene.title} · {result['average_fps']} avg / {result['low_1pct_fps']} low / "
-                          f"{result['high_1pct_fps']} high FPS\nPrivate result: {path}")
-                    uploads.flush(limit=3)
-                return 0
+                return suite.run(args, core, release)
             record = accuracy.run(args.emulator, core, getattr(args,"refresh",False))
             print(accuracy.summary(record))
             if args.command == "accuracy":

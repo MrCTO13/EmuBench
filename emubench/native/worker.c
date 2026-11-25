@@ -50,7 +50,9 @@ static void core_log(enum retro_log_level level, const char *fmt, ...) {
 static uint16_t buttons;
 static const char *capture_video;
 static enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_0RGB1555;
-static uint32_t previous_sample, visual_changes;
+static uint64_t previous_sample;
+static unsigned frame_index, checked_frames, visual_changes, unchanged, longest_stall;
+static bool verify_video;
 #ifdef _WIN32
 static LARGE_INTEGER frequency, origin;
 #endif
@@ -174,16 +176,24 @@ static void video(const void *buffer, unsigned width, unsigned height, size_t pi
                 exit(fail("Incomplete diagnostic frame"));
         if (fclose(f)) exit(fail("Incomplete diagnostic frame"));
     }
-    uint32_t sample = 2166136261u;
-    for (unsigned i = 0; i < 8; i++) {
-        size_t offset = ((i * 19 + 5) % height) * pitch + ((i * 29 + 3) % width) * pixel_bytes;
-        for (unsigned channel = 0; channel < pixel_bytes; channel++)
-            sample = (sample ^ pixels[offset + channel]) * 16777619u;
+    /* Hash every active byte, including the right and bottom edges, excluding row padding.
+       Prime spacing avoids locking the sample phase to common animation periods. */
+    if (verify_video && frame_index % 17 == 0) {
+        uint64_t sample = UINT64_C(14695981039346656037);
+        sample = (sample ^ width) * UINT64_C(1099511628211);
+        sample = (sample ^ height) * UINT64_C(1099511628211);
+        for (unsigned y = 0; y < height; ++y) {
+            const uint8_t *row = pixels + y * pitch;
+            for (size_t x = 0; x < (size_t)width * pixel_bytes; ++x)
+                sample = (sample ^ row[x]) * UINT64_C(1099511628211);
+        }
+        if (have_previous && sample != previous_sample) { ++visual_changes; unchanged = 0; }
+        else if (have_previous && ++unchanged > longest_stall) longest_stall = unchanged;
+        previous_sample = sample;
+        have_previous = true;
+        ++checked_frames;
+        signature = (signature ^ sample) * UINT64_C(1099511628211);
     }
-    if (have_previous && sample != previous_sample) ++visual_changes;
-    have_previous = true;
-    previous_sample = sample;
-    signature = (signature ^ sample) * 16777619u;
     ++renders;
 }
 static void audio(int16_t left, int16_t right) { (void)left; (void)right; ++audio_frames; }
@@ -314,6 +324,8 @@ int main(int argc, char **argv) {
             buttons = (uint16_t)(replay[pos] | replay[pos+1] << 8);
         }
         if (paced) wait_until(epoch + (uint64_t)(i * 1e9 / av.timing.fps));
+        verify_video = !diagnostic;
+        frame_index = (unsigned)i;
         uint64_t supplied = audio_frames;
         renders = 0;
         core.run();
@@ -330,6 +342,9 @@ int main(int argc, char **argv) {
         timings[i] = now - last;
         last = now;
     }
+    verify_video = false;
+    if (!diagnostic && (!visual_changes || longest_stall >= 30))
+        return fail("No motion across framebuffer checkpoints or a sustained duplicate frame sequence");
     if (load_error || (fbneo && !arcade_loaded)) return fail("Emulator could not confirm a working game or ROM set");
     if (!audio_frames) return fail("Core emitted no audio samples");
     if (paced) {

@@ -19,7 +19,7 @@ export function validate(r) {
   }
   requireValue(fields(r,["run_id","game","profile","emulator","version","source_commit","core_sha256","worker_sha256",
     "os","arch","cpu","warmup_frames","rendered_frames","average_fps","low_1pct_fps","high_1pct_fps","timing",
-    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution","speed_x","video_mode","mode"]));
+    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution","speed_x","video_mode","mode","frame_check"]));
   requireValue(Object.hasOwn(CORE_CONSOLES,r.emulator) && plain(r.run_id,36,UUID) && plain(r.game,90,TEXT));
   requireValue(["Darwin","Linux","Windows"].includes(r.os) && /^(arm64|aarch64|amd64|x86_64)$/i.test(r.arch));
   requireValue(plain(r.cpu,160,CPU) && plain(r.version,80,/^[a-zA-Z0-9 ()._+-]+$/) && SHA.test(r.core_sha256)
@@ -45,6 +45,10 @@ export function validate(r) {
     end=bin.end_ms; frame=bin.worst_frame;
   }
   requireValue(Math.abs(r.average_fps-1000*r.rendered_frames/end)<=1);
+  const check=r.frame_check;
+  requireValue(fields(check,["method","samples","changes","signature"]) && check.method==="full-fnv64-17"
+    && check.samples===Math.ceil(r.rendered_frames/17) && integer(check.changes,1,check.samples-1)
+    && /^[0-9a-f]{16}$/.test(check.signature));
   const mode=r.video_mode, handheld=["gb","gbc","gba"].includes(r.profile.split("-")[0]);
   requireValue(r.mode==="libretro" && fields(mode,["region","refresh_hz","source"]) && Number.isFinite(mode.refresh_hz)
     && mode.refresh_hz>=20 && mode.refresh_hz<=240 && (handheld?

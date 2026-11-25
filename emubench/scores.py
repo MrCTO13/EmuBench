@@ -189,7 +189,7 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
     times = list(map(int, output[5:]))
     video_mode = reference_mode(console, video_mode)
-    scene_evidence.update(mode="libretro", video_mode=video_mode, speed_x=speed(times, video_mode))
+    scene_evidence.update(frame_check=dict(method="full-fnv64-17", samples=(frames+16)//17, changes=int(visual_changes), signature=fingerprint), mode="libretro", video_mode=video_mode, speed_x=speed(times, video_mode))
     return {**({"execution":"x64-on-arm64"} if translated else {}), **({"build_recipe":"mgba-libretro-cmake-v1"} if tag else {}), **scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
             "comparison_id": journal.comparison_id(rom_hash), "device_id": journal.comparison_id("installation"),
             "emulator": name, "version": version, "source_commit": commit,
@@ -296,6 +296,8 @@ def public_fields(result, title):
     cohort = {"edition":edition["edition"]} if edition else {}
     if "video_mode" in result:
         cohort.update(mode="libretro",video_mode=result["video_mode"], speed_x=speed(result["frame_ns"], result["video_mode"]))
+    if "frame_check" in result:
+        cohort["frame_check"] = result["frame_check"]
     if "attestation" in result:
         cohort["attestation"]=result["attestation"]
     if "execution" in result:

@@ -1,5 +1,6 @@
 """Read the standalone regression runner's own average, separate from the frame-timed board."""
-import json
+import hashlib
+from PIL import Image
 from pathlib import Path
 import re
 import shutil
@@ -65,8 +66,7 @@ def execute(args):
         log=(output.stdout+output.stderr).decode(errors="replace")
         summary=re.search(r"Total execution time: ([0-9.]+)ms, average frame time [0-9.]+ms, ([0-9.]+) FPS",log)
         images=list(dumps.rglob("frame_*.png"))
-        if output.returncode or not summary or "GAME NOT STARTED" in log or not images or not all(
-            valid_png(path) for path in images):
+        if output.returncode or not summary or "GAME NOT STARTED" in log or len(images)<2 or len({pixel_digest(path) for path in images})<2:
             raise ValueError("DuckStation did not confirm game startup, timing and a rendered checkpoint")
         rates = re.findall(r"Video frame rate changed from [0-9.]+ to ([0-9.]+) fps",log)
         if not rates:
@@ -82,6 +82,8 @@ def execute(args):
         standalone.receipt("DuckStation",identity[1],runner_hash,args.frames,elapsed,match[0],len(images))
 
 
-def valid_png(path):
-    with path.open("rb") as f:
-        return f.read(8)==bytes.fromhex("89504e470d0a1a0a")
+def pixel_digest(path):
+    with Image.open(path) as image:
+        if image.format != "PNG":
+            raise ValueError("Expected a PNG rendered checkpoint")
+        return hashlib.sha256(image.convert("RGB").tobytes()).digest()

@@ -5,7 +5,7 @@ import os
 import tempfile
 import uuid
 from pathlib import Path
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from nacl.signing import SigningKey
 from . import engines
 
 def identity():
@@ -28,10 +28,10 @@ def identity():
     data=path.read_bytes()
     if len(data)!=64:
         raise ValueError("Invalid installation identity")
-    return Ed25519PrivateKey.from_private_bytes(data[:32]), data[32:].hex()
+    return SigningKey(data[:32]), data[32:].hex()
 
 def device(key):
-    return str(uuid.UUID(bytes=hashlib.sha256(key.public_key().public_bytes_raw()).digest()[:16]))
+    return str(uuid.UUID(bytes=hashlib.sha256(key.verify_key.encode()).digest()[:16]))
 
 def record(public):
     return json.dumps({k:v for k,v in public.items() if k not in ("game","attestation")},
@@ -41,7 +41,7 @@ def seal(public):
     key,_=identity()
     if public.get("device_id")!=device(key):
         raise ValueError("Measurement belongs to a different installation")
-    return key.sign(("EmuBench run v1\n"+record(public)).encode()).hex()
+    return key.sign(("EmuBench run v1\n"+record(public)).encode()).signature.hex()
 
 def complete(result):
     from .scores import public_fields

@@ -31,15 +31,15 @@ def publish(public):
     key,bearer=attest.identity()
     if not public.get("attestation") or public.get("device_id")!=attest.device(key):
         raise ValueError("A new signed measurement from this installation is required")
-    pub=key.public_key().public_bytes_raw().hex()
+    pub=key.verify_key.encode().hex()
     encoded=attest.record(public)
-    from cryptography.exceptions import InvalidSignature
+    from nacl.exceptions import BadSignatureError
     try:
-        key.public_key().verify(bytes.fromhex(public["attestation"]),("EmuBench run v1\n"+encoded).encode())
-    except InvalidSignature as exc:
+        key.verify_key.verify(("EmuBench run v1\n"+encoded).encode(),bytes.fromhex(public["attestation"]))
+    except BadSignatureError as exc:
         raise ValueError("Measurement changed after capture") from exc
     body={"record":encoded,"game":public["game"],"seal":public["attestation"]}
-    body["signature"]=key.sign(("EmuBench submission v1\n"+body["seal"]+"\n"+body["game"]).encode()).hex()
+    body["signature"]=key.sign(("EmuBench submission v1\n"+body["seal"]+"\n"+body["game"]).encode()).signature.hex()
     headers={"Authorization":"Bearer "+bearer,"X-EmuBench-Key":pub}
     try:
         receipt=post("/api/runs",body,headers)
@@ -47,7 +47,7 @@ def publish(public):
         if exc.code!=401:
             raise
         digest=hashlib.sha256(bearer.encode()).hexdigest()
-        signed=key.sign(("EmuBench enroll v1\n"+digest).encode()).hex()
+        signed=key.sign(("EmuBench enroll v1\n"+digest).encode()).signature.hex()
         post("/api/installs",{"key":pub,"token_hash":digest,"signature":signed},{})
         receipt=post("/api/runs",body,headers)
     expected=ORIGIN+"/run/"+public["run_id"]

@@ -42,3 +42,12 @@ shutil.copy2(next(p for p in python_licenses if p.is_file()), notices / "Python-
 installer = metadata.distribution("pyinstaller")
 license_path = next(p for p in installer.files if p.name == "COPYING.txt")
 shutil.copy2(installer.locate_file(license_path), notices / "PyInstaller-COPYING.txt")
+
+# Include upstream notices for the libraries carried in the single-file executable.
+for name in ("PyNaCl", "pillow", "psutil", "cffi", "pycparser"):
+    dist = metadata.distribution(name)
+    for entry in dist.files or ():
+        if entry.name.lower().startswith(("license","copying")) and ".dist-info" in str(entry):
+            target = notices / name / entry.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(dist.locate_file(entry), target)

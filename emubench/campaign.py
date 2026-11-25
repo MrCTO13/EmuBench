@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from . import engines, journal, scores
+from . import downloads, engines, journal, scores
 
 
 def arguments(commands):
@@ -23,6 +23,7 @@ def arguments(commands):
     new.add_argument("--rom", type=Path, action="append", required=True)
     build = new.add_mutually_exclusive_group()
     build.add_argument("--version", default=None)
+    build.add_argument("--latest-core", action="store_true")
     build.add_argument("--core", type=Path)
     new.add_argument("--warmup-frames", type=int, default=120)
     new.add_argument("--frames", type=int, default=1800)
@@ -59,6 +60,8 @@ def create(args):
         if path.suffix.lower() != ".gba" or not path.is_file() or not 192 <= path.stat().st_size <= 32 * 1024**2:
             raise ValueError(f"Invalid GBA ROM: {path.name}")
         roms.append([str(path), engines.digest(path)])
+    if args.latest_core:
+        args.core = downloads.latest_core("mgba")
     if args.core:
         core = args.core.expanduser().resolve(strict=True)
         commit = None

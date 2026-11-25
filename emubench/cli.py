@@ -5,23 +5,36 @@ import sqlite3
 import subprocess
 import sys
 
-from . import campaign, details, engines, journal, scores
+from . import campaign, details, downloads, engines, journal, scores
+from .catalog import CATALOG, TARGETS, host_target
+from http.client import HTTPException
+from zipfile import BadZipFile
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="emubench", description="Emu Bench presented by Carts")
-    parser.add_argument("--version", action="version", version="Emu Bench 0.1.0")
+    parser.add_argument("--version", action="version", version="Emu Bench 0.2.0")
     commands = parser.add_subparsers(dest="command", required=True)
-    versions = commands.add_parser("versions", help="List stable mGBA releases")
+    commands.add_parser("emulators", help="List supported emulator downloads")
+    dl = commands.add_parser("download", help="Fetch and verify the latest upstream packages")
+    which = dl.add_mutually_exclusive_group(required=True)
+    which.add_argument("emulator", nargs="?", type=downloads.emulator_id, choices=tuple(CATALOG))
+    which.add_argument("--all", action="store_true", help="Fetch the complete third-party shortlist")
+    dl.add_argument("--channel", choices=["auto", "desktop", "core"], default="auto")
+    dl.add_argument("--version", default="latest", help="Latest package, or a desktop release tag")
+    dl.add_argument("--target", choices=tuple(TARGETS), help="Default to this computer")
+    dl.add_argument("--list-only", action="store_true", help="Resolve upstream versions without downloading")
+    versions = commands.add_parser("versions", help="List mGBA releases or resolve a peer's latest package")
     install = commands.add_parser("install", help="Download an upstream release and build its core")
     for p in (versions, install):
-        p.add_argument("emulator", choices=["mgba"], nargs="?", default="mgba")
-    install.add_argument("--version", default=engines.REFERENCE, metavar="TAG|latest")
+        p.add_argument("emulator", type=downloads.emulator_id, choices=tuple(CATALOG), nargs="?", default="mgba")
+    install.add_argument("--version", default=None, metavar="TAG|latest")
     run = commands.add_parser("run", help="Measure a local GBA ROM")
     run.add_argument("--rom", type=Path, help="Unpacked .gba file (prompt if omitted)")
     run.add_argument("--emulator", choices=["mgba"], default="mgba")
     build = run.add_mutually_exclusive_group()
     build.add_argument("--version", "--emulator-version", metavar="TAG|latest")
+    build.add_argument("--latest-core", action="store_true", help="Download the current prebuilt core for this host")
     build.add_argument("--core", type=Path, help="Installed mGBA libretro library")
     run.add_argument("--warmup-frames", type=int, default=120)
     run.add_argument("--frames", type=int, default=1800)
@@ -41,7 +54,14 @@ def main(argv=None):
     campaign.arguments(commands)
     args = parser.parse_args(argv)
     try:
-        if args.command == "campaign":
+        if args.command == "emulators":
+            for key, item in CATALOG.items():
+                providers = (["desktop"] if item.assets else []) + (["core"] if item.core else [])
+                print(f"{key:<20} {item.name:<19} {', '.join(providers)}")
+        elif args.command == "download":
+            return downloads.batch(CATALOG if args.all else [args.emulator], args.target or host_target(),
+                                   args.channel, args.version, args.list_only)
+        elif args.command == "campaign":
             campaign.execute(args)
         elif args.command == "history":
             journal.history(args.game, args.limit)
@@ -50,14 +70,21 @@ def main(argv=None):
             public = scores.public_fields(trace, "Personal GBA ROM")
             print(details.write_report(trace, public, args.out))
         elif args.command == "versions":
-            print("\n".join(engines.releases()))
+            if args.emulator == "mgba":
+                print("\n".join(engines.releases()))
+            else:
+                return downloads.batch([args.emulator], host_target(), "auto", "latest", True)
         elif args.command == "install":
-            path, meta = engines.install(args.version)
+            if args.emulator != "mgba":
+                return downloads.batch([args.emulator], host_target(), "auto", args.version or "latest", False)
+            path, meta = engines.install(args.version or engines.REFERENCE)
             print(f"Installed mGBA {meta['tag']} at {path}")
         elif args.command == "run":
             if not args.rom and not sys.stdin.isatty():
                 parser.error("supply --rom when running without a terminal")
             rom = args.rom or Path(input("Path to your GBA ROM: ").strip().strip('"'))
+            if args.latest_core:
+                args.core = downloads.latest_core(args.emulator)
             with journal.attempt(rom, str(args.core.name if args.core else args.version or engines.REFERENCE)) as (run_id, start):
                 result = scores.measure(rom.expanduser(), args.version, args.core, args.warmup_frames,
                                         args.frames, args.timeout)
@@ -80,6 +107,6 @@ def main(argv=None):
                     return 0
             print(scores.publish(public))
         return 0
-    except (scores.InterruptedWindow, sqlite3.Error, OSError, ValueError, KeyError, TypeError, EOFError, subprocess.SubprocessError) as error:
+    except (scores.InterruptedWindow, HTTPException, BadZipFile, sqlite3.Error, OSError, ValueError, KeyError, TypeError, EOFError, subprocess.SubprocessError) as error:
         print(f"Emu Bench: {error}", file=sys.stderr)
         return 1

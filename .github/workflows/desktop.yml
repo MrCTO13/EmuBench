@@ -41,6 +41,12 @@ jobs:
           ./dist/emubench campaign export "$RUNNER_TEMP/test.sqlite" --job 1 --out "$RUNNER_TEMP/campaign.json"
           ./dist/emubench history --game sample
           python -c "import pathlib,os,json; root=pathlib.Path(os.environ['RUNNER_TEMP']); data=json.loads((root/'campaign.json').read_text()); assert data['rendered_frames']==100 and data['finished_utc'] and data['sampled_frame_changes']>0; assert 'worst_at_ms' in (root/'chart.html').read_text(encoding='utf-8')"
+      - name: Download the complete emulator catalog on this host
+        shell: bash
+        run: |
+          ./dist/emubench download --all
+          ./dist/emubench run --latest-core --rom "$RUNNER_TEMP/sample.gba" --frames 120 --out "$RUNNER_TEMP/downloaded-core.json"
+          python -c "import json,os,pathlib; r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'downloaded-core.json').read_text()); assert r['rendered_frames']==120 and r['sampled_frame_changes']>0"
       - name: Assemble distribution
         shell: bash
         run: |

@@ -62,7 +62,7 @@ class InterruptedWindow(InterruptedError):
     """The device became busy or another worker owns the measurement slot."""
 
 
-def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False, filename=None, external=None, expected_digest=None, force_color=False):
+def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False, filename=None, external=None, expected_digest=None, force_color=False, video_mode=None):
     engines.home().mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
            "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
@@ -124,6 +124,9 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
             finally:
                 if proc.poll() is None:
                     proc.kill()
+        if video_mode is not None:
+            region, rate = (root / "video-rate").read_text().split()
+            video_mode.update(region={"0":"NTSC","1":"PAL"}[region], refresh_hz=float(rate))
         evidence = (root / "frame-evidence").read_text(encoding="ascii").splitlines()
         if paced:
             return evidence, (root / "paced-result").read_text().split()
@@ -165,9 +168,10 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     core_hash = engines.digest(core)
     worker,translated = engines.timing_worker(core)
     worker_hash = engines.digest(worker)
+    video_mode = {}
     output, checkpoints = run_worker(worker, core, data, warmup, frames, timeout, ready, name,
                                      scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,
-                                     external=external, expected_digest=rom_hash)
+                                     external=external, expected_digest=rom_hash, video_mode=video_mode)
     if core_hash != engines.digest(core) or worker_hash != engines.digest(worker):
         raise ValueError("Core or timing worker changed during measurement")
     scene_evidence = {}
@@ -184,6 +188,8 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     if tag and version != tag:
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
     times = list(map(int, output[5:]))
+    video_mode = reference_mode(console, video_mode)
+    scene_evidence.update(video_mode=video_mode, speed_x=speed(times, video_mode))
     return {**({"execution":"x64-on-arm64"} if translated else {}), **({"build_recipe":"mgba-libretro-cmake-v1"} if tag else {}), **scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
             "comparison_id": journal.comparison_id(rom_hash), "device_id": journal.comparison_id("installation"),
             "emulator": name, "version": version, "source_commit": commit,
@@ -233,6 +239,19 @@ def save(result, destination):
     return destination
 
 
+def reference_mode(console, mode):
+    rate = mode["refresh_hz"]
+    if not 20 <= rate <= 240:
+        raise ValueError("Emulator did not report a usable console refresh rate")
+    if console in ("gb", "gbc", "gba"):
+        return {"region":"handheld", "refresh_hz":4194304 / 70224, "source":"lcd-clock"}
+    return {"region":mode["region"], "refresh_hz":rate, "source":"emulator-av"}
+
+
+def speed(times, mode):
+    return 1e9 * len(times) / (sum(times) * mode["refresh_hz"])
+
+
 def public_title(title):
     if not isinstance(title, str) or not 1 <= len(title.strip()) <= 90 or any(
             not (c.isalnum() or c in " .,'’()+&!_-") for c in title):
@@ -275,6 +294,8 @@ def public_fields(result, title):
     if not isinstance(cpu, str) or not 1 <= len(cpu) <= 160 or not cpu.isprintable():
         raise ValueError("Invalid processor model")
     cohort = {"edition":edition["edition"]} if edition else {}
+    if "video_mode" in result:
+        cohort.update(video_mode=result["video_mode"], speed_x=speed(result["frame_ns"], result["video_mode"]))
     if "attestation" in result:
         cohort["attestation"]=result["attestation"]
     if "execution" in result:

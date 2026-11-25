@@ -19,7 +19,7 @@ export function validate(r) {
   }
   requireValue(fields(r,["run_id","game","profile","emulator","version","source_commit","core_sha256","worker_sha256",
     "os","arch","cpu","warmup_frames","rendered_frames","average_fps","low_1pct_fps","high_1pct_fps","timing",
-    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution"]));
+    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution","speed_x","video_mode"]));
   requireValue(Object.hasOwn(CORE_CONSOLES,r.emulator) && plain(r.run_id,36,UUID) && plain(r.game,90,TEXT));
   requireValue(["Darwin","Linux","Windows"].includes(r.os) && /^(arm64|aarch64|amd64|x86_64)$/i.test(r.arch));
   requireValue(plain(r.cpu,160,CPU) && plain(r.version,80,/^[a-zA-Z0-9 ()._+-]+$/) && SHA.test(r.core_sha256)
@@ -45,6 +45,12 @@ export function validate(r) {
     end=bin.end_ms; frame=bin.worst_frame;
   }
   requireValue(Math.abs(r.average_fps-1000*r.rendered_frames/end)<=1);
+  const mode=r.video_mode, handheld=["gb","gbc","gba"].includes(r.profile.split("-")[0]);
+  requireValue(fields(mode,["region","refresh_hz","source"]) && Number.isFinite(mode.refresh_hz)
+    && mode.refresh_hz>=20 && mode.refresh_hz<=240 && (handheld?
+      mode.region==="handheld" && mode.source==="lcd-clock" && Math.abs(mode.refresh_hz-4194304/70224)<1e-9 :
+      ["NTSC","PAL"].includes(mode.region) && mode.source==="emulator-av")
+    && Number.isFinite(r.speed_x) && Math.abs(r.speed_x-1000*r.rendered_frames/end/mode.refresh_hz)<1e-6);
   if (r.accuracy) {
     const color=r.profile==="gbc-boot-no-input-v1" && ["Gambatte","SameBoy"].includes(r.emulator);
     requireValue(color || Object.hasOwn(emulators,r.emulator));

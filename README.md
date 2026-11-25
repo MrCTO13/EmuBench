@@ -171,3 +171,7 @@ Supported routes include NES, SNES, GB, GBC, GBA, Master System, Game Gear, Mega
 DuckStation has a separate measurement protocol. The desktop downloader covers it; its upstream regression executable can be supplied with `emubench duckstation --runner PATH --rom IMAGE --system-dir BIOS_DIR`. The local report stores its average FPS and counts rendered checkpoints. The standard score board requires individual frame timings, which this executable does not export. It may need to be built separately from the upstream project.
 
 See the [frozen samples, verified rankings and accuracy evidence](STUDIES.md).
+
+### Console speed
+
+The primary unit is × real time. EmuBench divides the unrounded rendered frame rate by the loaded game's refresh rate. The libretro harness records the region and AV timing after warm-up (including fractional PAL and NTSC rates). Game Boy, Color and Advance use the LCD clock, 4,194,304 / 70,224 Hz. Frame-rate percentiles remain available in whole FPS. Historical records without a video mode have no normalized score. The denominator for variable video modes is the timing reported by that build at the start of the measured window.

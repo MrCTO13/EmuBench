@@ -216,7 +216,7 @@ def main(argv=None):
                     path = scores.save(result,dest)
                     journal.complete(result,path)
                 print(f"{scene.title} · {scene.description}\n"
-                      f"{result['average_fps']} avg / {result['low_1pct_fps']} low / {result['high_1pct_fps']} high FPS"
+                      f"{result['speed_x']:.2f}× · {result['average_fps']} avg / {result['low_1pct_fps']} low / {result['high_1pct_fps']} high FPS"
                       f"\nPrivate result: {path}")
                 uploads.flush(limit=3)
         elif args.command == "campaign":
@@ -273,6 +273,7 @@ def main(argv=None):
                 path = scores.save(result, args.out)
                 journal.complete(result, path, args.game)
             print(f"{result['emulator']} {result['version']} · {result['rendered_frames']} rendered frames\n"
+                  f"Console speed {result['speed_x']:.2f}× ({result['video_mode']['refresh_hz']:.6f} Hz)\n"
                   f"Average FPS   {result['average_fps']:.0f}\n"
                   f"1% low FPS    {result['low_1pct_fps']:.0f}\n"
                   f"1% high FPS   {result['high_1pct_fps']:.0f}\nPrivate result: {path}")

@@ -21,7 +21,7 @@
 
 /* The core runs in a dedicated child process. Python never enters the timed loop. */
 static struct {
-    unsigned (*api_version)(void);
+    unsigned (*api_version)(void), (*get_region)(void);
     void (*init)(void), (*deinit)(void), (*run)(void), (*unload_game)(void);
     void (*get_system_av_info)(struct retro_system_av_info *);
     void (*get_system_info)(struct retro_system_info *);
@@ -211,7 +211,7 @@ static int open_core(void) {
 #define BIND(field) do { void (*symbol)(void) = (void (*)(void)) SYMBOL("retro_" #field); \
     if (!symbol) return fail("Missing libretro entry point: " #field); \
     memcpy(&core.field, &symbol, sizeof(symbol)); } while (0)
-    BIND(api_version); BIND(init); BIND(deinit); BIND(run); BIND(unload_game);
+    BIND(api_version); BIND(get_region); BIND(init); BIND(deinit); BIND(run); BIND(unload_game);
     BIND(get_system_av_info); BIND(get_system_info); BIND(set_environment); BIND(set_video_refresh);
     BIND(set_audio_sample); BIND(set_audio_sample_batch); BIND(set_input_poll);
     BIND(set_input_state); BIND(load_game);
@@ -298,6 +298,9 @@ int main(int argc, char **argv) {
     signature = 2166136261u;
     struct retro_system_av_info av = {0};
     core.get_system_av_info(&av);
+    FILE *rate = fopen("video-rate", "w");
+    if (!rate || fprintf(rate, "%u %.17g\n", core.get_region(), av.timing.fps) < 0 || fclose(rate))
+        return fail("Cannot record console video timing");
     if (paced && (!(av.timing.fps >= 45 && av.timing.fps <= 75) ||
                   !(av.timing.sample_rate >= 8000 && av.timing.sample_rate <= 192000)))
         return fail("Unsupported core refresh rate or audio sample rate");

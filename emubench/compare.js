@@ -57,7 +57,7 @@ function renderCompared() {
   compareBody.replaceChildren();
   for (const run of entries.filter(r => selected.has(r.emulator))) {
     const row = document.createElement("tr");
-    for (const value of [run.emulator,run.version,run.average_fps,run.low_1pct_fps,run.high_1pct_fps, diagnosticCount(run)]) {
+    for (const value of [run.emulator,run.version,speedLabel(run),run.average_fps,run.low_1pct_fps,run.high_1pct_fps, diagnosticCount(run)]) {
       const cell = document.createElement("td");
       cell.textContent = typeof value === "number" ? Math.round(value) : value;
       row.append(cell);

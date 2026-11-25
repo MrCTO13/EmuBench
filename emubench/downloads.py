@@ -205,12 +205,17 @@ def prepare_file(spec, archive, stage):
     return archive
 
 
-def transfer(spec, path):
+def transfer(spec, path, attempt=0):
     digest = sha256()
     length = 0
     url = spec.url
     if spec.member and spec.checksum.startswith("crc32:"):
-        url += "?crc32=" + spec.checksum.removeprefix("crc32:")
+        # Nightly archives and their index can reach an upstream CDN edge at different times.
+        # Each URL must still produce the exact indexed CRC and native architecture.
+        if attempt == 0:
+            url += "?crc32=" + spec.checksum.removeprefix("crc32:")
+        elif attempt > 1:
+            url += "?refresh=" + str(time.time_ns())
     with engines.open_upstream(Request(url, headers={"User-Agent": "EmuBench/0.3"})) as response, path.open("wb") as f:
         if not response.url.startswith("https://"):
             raise ValueError("Insecure upstream redirect")
@@ -229,7 +234,7 @@ def transfer(spec, path):
     return result
 
 
-def obtain(spec):
+def obtain(spec, attempt=0):
     root = engines.home() / "downloads" / spec.emulator / spec.target / spec.channel
     refs = root / "receipts"
     refs.mkdir(parents=True, exist_ok=True)
@@ -250,7 +255,7 @@ def obtain(spec):
     with tempfile.TemporaryDirectory(dir=root) as folder:
         stage = Path(folder)
         archive = stage / "payload"
-        archive_sha = transfer(spec, archive)
+        archive_sha = transfer(spec, archive, attempt)
         payload = prepare_file(spec, archive, stage)
         file_sha = engines.digest(payload) if spec.member else archive_sha
         dest = root / file_sha / filename
@@ -266,12 +271,17 @@ def obtain(spec):
 
 def get(key, target, channel="auto", version="latest", plan=False):
     index_refresh = None
+    previous_checksum = None
+    archive_attempt = 0
     for attempt in range(3):
         try:
             spec = resolve(key, target, channel, version, index_refresh)
             if plan:
                 return spec, None
-            path, _ = obtain(spec)
+            if spec.checksum != previous_checksum:
+                archive_attempt = 0
+                previous_checksum = spec.checksum
+            path, _ = obtain(spec, archive_attempt)
             return spec, path
         except (URLError, TimeoutError, ConnectionError, BadZipFile, EOFError, OSError, ValueError, HTTPException) as exc:
             transient = isinstance(exc, (URLError, TimeoutError, ConnectionError, IncompleteRead)) and not isinstance(exc, HTTPError)
@@ -283,6 +293,7 @@ def get(key, target, channel="auto", version="latest", plan=False):
                 raise
             core_index.cache_clear()
             if rotate:
+                archive_attempt += 1
                 index_refresh = time.time_ns()
             time.sleep(1 + attempt)
 

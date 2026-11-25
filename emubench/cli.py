@@ -67,7 +67,7 @@ def main(argv=None):
     compare.add_argument("--game", help="Display title for this comparison")
     compare.add_argument("--out", type=Path, required=True)
     suites = commands.add_parser("carter", help="Run deterministic Carter FPS scenes")
-    suites.add_argument("--rom", type=Path, help="Pinned original cartridge, or fetch with authenticated gh")
+    suites.add_argument("--rom", type=Path, help="Local pinned Carter cartridge. By default, download the public homebrew release.")
     suites.add_argument("--scene", choices=("all","easy","normal","hard"), default="all")
     suites.add_argument("--out-dir", type=Path, help="Private directory for per-scene trace files")
     official = commands.add_parser("suite", help="Build and run the public Carter Circuit workload")

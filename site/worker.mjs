@@ -179,7 +179,7 @@ export default {async fetch(request,env) {
     }
   }
   if(path==="/client.js")return new Response(CLIENT,{headers:{"content-type":"text/javascript; charset=utf-8"}});
-  if(path==="/"||["/compare","/rankings","/history","/library","/method"].includes(path)||/^\/(run|campaign)\/[a-f0-9-]{36}$/.test(path))
-    return new Response(PAGE,{headers:{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'","referrer-policy":"no-referrer"}});
+  if(path==="/download"||path==="/"||["/compare","/rankings","/history","/library","/method"].includes(path)||/^\/(run|campaign)\/[a-f0-9-]{36}$/.test(path))
+    return new Response(path==="/download" ? DOWNLOAD_PAGES[["mac","windows","cli"].includes(url.searchParams.get("platform")) ? url.searchParams.get("platform") : ""] : PAGE,{headers:{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'","referrer-policy":"no-referrer"}});
   return json({error:"Page not found"},404);
 }};

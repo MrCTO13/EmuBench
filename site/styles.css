@@ -272,3 +272,30 @@ footer b { color: var(--ink); }
   .home h1 { font-size: clamp(1.82rem, 8.4vw, 2rem); overflow-wrap: normal; }
   .feature { width: 64px; }
 }
+
+.download-lead .heading > p { max-width: 46ch; }
+.download-body { padding: clamp(18px, 3.2vw, 44px); background: var(--paper); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px; }
+.platform-picker { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.platform-picker a { display: block; padding: 18px 16px; background: white; border: 1px solid #a9b8c0; border-top: 4px solid #8fa6c1; border-radius: 5px; text-decoration: none; }
+.platform-picker a:hover, .platform-picker a[aria-current] { background: #eaf1ff; border-color: var(--blue); }
+.platform-picker strong { display: block; color: var(--blue); font: 720 clamp(1.25rem,2.3vw,1.8rem)/1.12 var(--display); letter-spacing: -.035em; }
+.platform-picker span { color: var(--muted); display: block; font-size: .9rem; margin-top: 5px; }
+.install-panel { margin-top: 1.8rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.install-panel h2 { margin-top: 0; }
+.install-panel li { margin-block: .45rem; }
+.download-files { display: flex; flex-wrap: wrap; gap: 10px; margin: 1rem 0 .5rem; }
+.download-files .file-link { display: inline-block; padding: .65rem 1rem; border-radius: 5px; text-decoration: none; font-weight: 650; background: var(--blue); color: white; }
+.download-files .file-link:hover { background: #103781; }
+.install-note { color: var(--muted); font-size: .9rem; }
+.cli-files { max-width: 550px; }
+.cli-files th, .cli-files td { min-width: 0 !important; }
+.shell-example { margin: .8rem 0; }
+.shell-example b { display: block; margin-bottom: .25rem; }
+.shell-example code { display: inline-block; padding: .5rem .7rem; background: var(--ink); color: white; border-radius: 4px; }
+@media(max-width:620px) {
+  .platform-picker { grid-template-columns: 1fr; gap: 8px; }
+  .platform-picker a { padding: 12px 14px; border-top: 1px solid #a9b8c0; border-left: 4px solid #8fa6c1; }
+}
+.desktop-preview { margin: 1.5rem 0 0; padding: clamp(16px,2.5vw,32px); text-align: center; background: #e8edee; border: 1px solid var(--line); border-radius: 6px; }
+.desktop-preview img { display: block; width: min(100%,750px); height: auto; margin: auto; }
+.desktop-preview figcaption { color: var(--muted); font-size: .88rem; margin-top: .65rem; }

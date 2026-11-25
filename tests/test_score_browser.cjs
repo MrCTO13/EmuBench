@@ -41,6 +41,27 @@ async function run() {
         }
       }
     }
+    await page.goto(root + "/");
+    await page.getByRole("link", {name: "Downloads", exact: true}).click();
+    await page.waitForURL("**/download");
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({width, height: 820});
+      for (const [label, platform, count] of [["Mac app", "mac", 2], ["Windows app", "windows", 2], ["Command line", "cli", 6]]) {
+        await page.getByRole("group", {name: "Choose a download"}).getByRole("link", {name: new RegExp(label)}).click();
+        await page.waitForURL("**/download?platform=" + platform);
+        const files = page.locator(".install-panel .file-link");
+        assert.equal(await files.count(), count);
+        for (const url of await files.evaluateAll(links => links.map(link => link.href))) {
+          assert.match(url, /^https:\/\/github\.com\/MrCTO13\/EmuBench\/releases\/download\/v[\w.-]+\/[\w.-]+\.zip$/);
+        }
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), width + " " + platform);
+        if (name === "chrome" && width === 1280) {
+          const violations = await page.evaluate(axe.source + `; axe.run(document,{runOnly:{type:"tag",
+            values:["wcag2a","wcag2aa","wcag21aa","wcag22aa"]}}).then(r=>r.violations.map(v=>v.id))`);
+          assert.deepEqual(violations, [], platform);
+        }
+      }
+    }
     await visit("/?demo=1");
     await page.getByLabel("Game or ROM name").fill("Super Mario World");
     await page.getByRole("button", {name: "Search", exact: true}).click();

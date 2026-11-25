@@ -1,7 +1,9 @@
 """Render the download choices as ordinary links, including with JavaScript disabled."""
 from html import escape
 
-RELEASE = "https://github.com/MrCTO13/EmuBench/releases/download/v0.8.0-rc.2"
+RELEASES = "https://github.com/MrCTO13/EmuBench/releases/download"
+DESKTOP_VERSION = "0.8.0-rc.2"
+CLI_VERSION = "0.8.0-rc.1"
 CHOICES = {
     "mac": ("Mac app", "Apple silicon and Intel"),
     "windows": ("Windows app", "x64 and ARM64"),
@@ -11,7 +13,8 @@ CHOICES = {
 
 def asset(platform, cpu, label, desktop=False):
     name = ("EmuBench-Desktop-" if desktop else "emubench-") + f"{platform}-{cpu}.zip"
-    return f'<a class="file-link" href="{RELEASE}/{name}">{escape(label)}</a>'
+    version = DESKTOP_VERSION if desktop else CLI_VERSION
+    return f'<a class="file-link" href="{RELEASES}/v{version}/{name}">{escape(label)}</a>'
 
 
 def desktop(platform):
@@ -33,7 +36,7 @@ def desktop(platform):
     instructions = "".join(f"<li>{step}</li>" for step in steps)
     return f"""<section class="install-panel" aria-labelledby="install">
       <h2 id="install">{'EmuBench for Mac' if mac else 'EmuBench for Windows'}</h2>
-      <div class="download-files">{buttons}</div>
+      <p class="install-note">Desktop beta {DESKTOP_VERSION}</p><div class="download-files">{buttons}</div>
       <details><summary>Which download fits my computer?</summary><p>{choose}</p></details>
       <h3>Install and run</h3><ol>{instructions}
         <li>The first run downloads the emulator and test files. Open History to inspect individual frames or publish a score.</li></ol>
@@ -44,7 +47,8 @@ def command_line():
     rows = []
     for name, target in [("macOS","macos"),("Windows","windows"),("Linux","linux")]:
         rows.append(f'<tr><th scope="row">{name}</th><td>{asset(target, "arm64", "Apple silicon" if target=="macos" else "ARM64")}</td><td>{asset(target, "x64", "Intel Mac" if target=="macos" else "x64")}</td></tr>')
-    return """<section class="install-panel" aria-labelledby="install"><h2 id="install">EmuBench CLI</h2>
+    return f"""<section class="install-panel" aria-labelledby="install"><h2 id="install">EmuBench CLI</h2>
+      <p class="install-note">CLI beta {CLI_VERSION}</p>
       <table class="cli-files"><caption class="sr">Command-line downloads by operating system and processor</caption>
       <thead><tr><th scope="col">System</th><th scope="col">ARM</th><th scope="col">Intel / AMD</th></tr></thead><tbody>""" + "".join(rows) + """</tbody></table>
       <h3>Run Cartervania from a terminal</h3>

@@ -80,6 +80,7 @@ On Windows, Task Scheduler can invoke the same “campaign resume” command at 
 ## Carter FPS and accuracy checks
 
     emubench carter --emulator mgba --rom "Carts-Cartervania-GBA.gba" --out-dir results
+    emubench carter --emulator mgba --version 0.10.5 --scene hard --out-dir results
     emubench carter --emulator snes9x --scene hard --out-dir results
     emubench carter --emulator bsnes --scene hard --out-dir results
     emubench accuracy --emulator snes9x --refresh --out diagnostics.json

@@ -66,6 +66,8 @@ jobs:
       - name: Read upstream diagnostic pass and fail screens from the packaged CLI
         shell: bash
         run: |
+          ./dist/emubench accuracy --emulator mgba --version 0.10.5 --out "$RUNNER_TEMP/reference-checks.json" || test "$?" = 1
+          python -c "import os,json,pathlib; result=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'reference-checks.json').read_text()); assert set(result['checks'])=={'ARM','Thumb','Memory'} and 'unresolved' not in result['checks'].values()"
           for emulator in mgba snes9x bsnes; do
             ./dist/emubench accuracy --emulator "$emulator" --out "$RUNNER_TEMP/$emulator-checks.json" || test "$?" = 1
           done

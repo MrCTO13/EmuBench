@@ -64,7 +64,9 @@ def main(argv=None):
     diag.add_argument("--refresh", action="store_true", help="Re-run even if this build has a cached result")
     for command in (suites, diag):
         command.add_argument("--emulator", choices=tuple(scores.ADAPTERS), required=True)
-        command.add_argument("--core", type=Path, help="Pinned local core. By default fetch the latest core.")
+        source = command.add_mutually_exclusive_group()
+        source.add_argument("--core", type=Path, help="Pinned local core. By default fetch the latest prebuilt core.")
+        source.add_argument("--version", metavar="TAG|latest", help="Build a specific mGBA release")
     campaign.arguments(commands)
     args = parser.parse_args(argv)
     try:
@@ -76,7 +78,13 @@ def main(argv=None):
             return downloads.batch(CATALOG if args.all else [args.emulator], args.target or host_target(),
                                    args.channel, args.version, args.list_only)
         elif args.command in ("carter","accuracy"):
-            core = args.core.expanduser().resolve(strict=True) if args.core else downloads.latest_core(args.emulator)
+            release = None
+            if args.version:
+                if args.emulator != "mgba":
+                    raise ValueError("For a specific SNES build, supply its libretro library with --core")
+                core, release = engines.install(args.version)
+            else:
+                core = args.core.expanduser().resolve(strict=True) if args.core else downloads.latest_core(args.emulator)
             console = "gba" if args.emulator == "mgba" else "snes"
             if args.command == "carter":
                 rom = carter.cartridge(console, args.rom)
@@ -95,6 +103,10 @@ def main(argv=None):
                                             expected_rom=carter.GAMES[console].digest,emulator=args.emulator,scene=scene)
                     if result["core_sha256"] != record["core_sha256"] or result["worker_sha256"] != record["worker_sha256"]:
                         raise ValueError("Core or worker changed during the suite")
+                    if release:
+                        if result["version"] != release["tag"] or result["core_sha256"] != release["sha256"]:
+                            raise ValueError("Measured core differs from the requested mGBA release")
+                        result["source_commit"] = release["commit"]
                     result.update(id=run_id,local_name=scene.title,started_utc=start,finished_utc=journal.now(),accuracy=record)
                     dest = args.out_dir / (scene.profile + "-" + run_id + ".json") if args.out_dir else None
                     path = scores.save(result,dest)

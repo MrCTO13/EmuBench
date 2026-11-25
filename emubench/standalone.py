@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import time
 import uuid
-from . import conditions, engines, journal
+from . import conditions, engines, journal, telemetry
 
 
 @contextmanager
@@ -34,20 +34,21 @@ def slot(name='measure.lock'):
 
 def timed(command, directory, timeout):
     with slot():
+        before = telemetry.snapshot()
         idle = conditions.idle()
         start = time.perf_counter_ns()
         output = subprocess.run(command, cwd=directory, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout)
         elapsed = time.perf_counter_ns() - start
     if output.returncode or elapsed <= 0:
         raise ValueError("The selected standalone runner did not complete the workload")
-    return output, elapsed, idle
+    return output, elapsed, idle, telemetry.window(before)
 
 
-def receipt(emulator, version, digest, frames, elapsed, hz, checkpoints, idle, content_sha256):
+def receipt(emulator, version, digest, frames, elapsed, hz, checkpoints, idle, conditions_window, content_sha256):
     fps = 1e9 * frames / elapsed
     data = dict(id=str(uuid.uuid4()), finished_utc=journal.now(), emulator=emulator, version=version,
                 mode="standalone-process-v1", runner_sha256=digest, frames=frames, elapsed_ns=elapsed,
-                content_sha256=content_sha256,idle=idle, refresh_hz=hz, average_fps=round(fps), speed_x=fps/hz, render_checkpoints=checkpoints)
+                conditions=conditions_window,content_sha256=content_sha256,idle=idle, refresh_hz=hz, average_fps=round(fps), speed_x=fps/hz, render_checkpoints=checkpoints)
     return data
 
 
@@ -60,6 +61,7 @@ def run_series(measure, args):
             raise ValueError("Standalone workload changed between passes")
     report = repeats.summarize([r["elapsed_ns"] for r in runs], args.frames)
     data = runs[report["selected"]]
+    data["conditions"] = [r["conditions"] for r in runs]
     data["repeatability"] = report
     data["idle"] = max((r["idle"] for r in runs),key=lambda i:i["cpu_percent"])
     dest = engines.home() / "standalone" / (data["id"]+".json")
@@ -68,7 +70,7 @@ def run_series(measure, args):
         json.dump(data, f, indent=2)
     status="accepted" if report["accepted"] else "rejected"
     print(f"{data['emulator']} standalone · {data['speed_x']:.2f}× · {data['average_fps']} FPS "
-          f"· spread {report['relative_spread']:.1%} ({status})\\nPrivate report: {dest}")
+          f"· spread {report['relative_spread']:.1%} ({status})\nPrivate report: {dest}")
 
 
 def arguments(commands):
@@ -95,9 +97,9 @@ def mgba(args):
         if not match:
             raise ValueError("The program did not identify its upstream mGBA version")
         digest = engines.digest(runner)
-        output, elapsed, idle = timed([runner, "-P", "-s", "0", "-C", "useBios=0", "-C", "idleOptimization=ignore",
+        output, elapsed, idle, window = timed([runner, "-P", "-s", "0", "-C", "useBios=0", "-C", "idleOptimization=ignore",
                                  "-F", str(args.frames), game], root, args.timeout)
         rows = list(csv.DictReader(io.StringIO(output.stdout.decode())))
         if len(rows)!=1 or rows[0].get("renderer")!="software" or int(rows[0]["frames"])!=args.frames:
             raise ValueError("mGBA did not confirm software rendering for the requested frames")
-        return receipt("mGBA",match[1],digest,args.frames,elapsed,4194304/70224,None,idle,engines.digest(game))
+        return receipt("mGBA",match[1],digest,args.frames,elapsed,4194304/70224,None,idle,window,engines.digest(game))

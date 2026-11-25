@@ -62,7 +62,7 @@ def execute(args):
         command=[local,"-console","-log","Verbose","-renderer","Software","-frames",str(args.frames),
                  "-dumpdir",dumps,"-dumpinterval",str(max(1,args.frames//2)),"--",rom]
         # Keep the upstream log private. Only its total and checkpoint existence enter the receipt.
-        output,elapsed,idle=standalone.timed(command,folder,args.timeout)
+        output,elapsed,idle,window=standalone.timed(command,folder,args.timeout)
         log=(output.stdout+output.stderr).decode(errors="replace")
         summary=re.search(r"Total execution time: ([0-9.]+)ms, average frame time [0-9.]+ms, ([0-9.]+) FPS",log)
         images=list(dumps.rglob("frame_*.png"))
@@ -79,7 +79,7 @@ def execute(args):
         match = [hz for hz in candidates if abs(hz-observed)<0.0051]
         if len(match)!=1:
             raise ValueError("Unknown PlayStation refresh mode")
-        return standalone.receipt("DuckStation",identity[1],runner_hash,args.frames,elapsed,match[0],len(images),idle,engines.digest(rom))
+        return standalone.receipt("DuckStation",identity[1],runner_hash,args.frames,elapsed,match[0],len(images),idle,window,engines.digest(rom))
 
 
 def pixel_digest(path):

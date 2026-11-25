@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 
-from . import adapters, carter, circuit, conditions, details, engines, identify, journal, library
+from . import adapters, carter, circuit, conditions, telemetry, details, engines, identify, journal, library
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
@@ -147,6 +147,7 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
             runs.append(run)
     report = repeats.summarize([sum(r["frame_ns"]) for r in runs], frames)
     selected = runs[report["selected"]]
+    selected["conditions"] = [r["conditions"] for r in runs]
     selected["repeatability"] = report
     selected["idle"] = max((r["idle"] for r in runs), key=lambda i:i["cpu_percent"])
     return selected
@@ -185,13 +186,14 @@ def _measure_once(rom, requested, core, warmup, frames, timeout, ready, expected
     worker,translated = engines.timing_worker(core)
     worker_hash = engines.digest(worker)
     video_mode = {}
+    before = telemetry.snapshot()
     idle = conditions.idle()
     output, checkpoints = run_worker(worker, core, data, warmup, frames, timeout, ready, name,
                                      scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,
                                      external=external, expected_digest=rom_hash, video_mode=video_mode)
     if core_hash != engines.digest(core) or worker_hash != engines.digest(worker):
         raise ValueError("Core or timing worker changed during measurement")
-    scene_evidence = {'idle':idle}
+    scene_evidence = {'idle':idle,'conditions':telemetry.window(before)}
     if not scene and console in identify.CATALOGS:
         edition = identify.match(console, data)
         if edition:
@@ -313,6 +315,8 @@ def public_fields(result, title):
     cohort = {"edition":edition["edition"]} if edition else {}
     if "video_mode" in result:
         cohort.update(mode="libretro",video_mode=result["video_mode"], speed_x=speed(result["frame_ns"], result["video_mode"]))
+    if "conditions" in result:
+        cohort["conditions"] = result["conditions"]
     if "repeatability" in result:
         cohort["repeatability"] = result["repeatability"]
     if "idle" in result:

@@ -6,14 +6,14 @@ from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 from . import attest
 
-ORIGIN="https://emubench-scores.mrcto.chatgpt.site"
+ORIGIN="https://emubench.games"
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):
         return None
 
 def post(path,data,headers):
-    req=Request(ORIGIN+path,data=json.dumps(data).encode(),headers={"Content-Type":"application/json",**headers})
+    req=Request(ORIGIN+path,data=json.dumps(data).encode(),headers={"Content-Type":"application/json","User-Agent":"EmuBench/0.8",**headers})
     tls=ssl.create_default_context()
     import os
     for bundle in ("/etc/ssl/cert.pem","/etc/ssl/certs/ca-certificates.crt","/etc/pki/tls/certs/ca-bundle.crt"):

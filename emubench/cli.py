@@ -16,7 +16,7 @@ def main(argv=None):
     if not (sys.argv[1:] if argv is None else argv):
         return desktop.launch()
     parser = argparse.ArgumentParser(prog="emubench", description="EmuBench")
-    parser.add_argument("--version", action="version", version="EmuBench 0.8.0-rc.1")
+    parser.add_argument("--version", action="version", version="EmuBench 0.8.0-rc.2")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("desktop", help="Open the local desktop launcher")
     commands.add_parser("emulators", help="List supported emulator downloads")

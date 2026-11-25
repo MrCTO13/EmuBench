@@ -14,7 +14,7 @@ def run(args, core, release):
     extra={"chips":chips.run(args.emulator,core)} if console=="snes" else {}
     extra["accuracy"]=accuracy.run(args.emulator,core)
     group=str(uuid.uuid4())
-    worker=engines.digest(engines.worker())
+    worker=engines.digest(engines.timing_worker(core)[0])
     if args.expect_worker and args.expect_worker!=worker:
         raise ValueError("Timing worker differs from requested binary digest")
     failed=False

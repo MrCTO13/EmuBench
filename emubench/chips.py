@@ -90,9 +90,10 @@ def run(emulator,core):
     if emulator=="mgba":
         raise ValueError("Choose a SNES emulator for the coprocessor checks")
     result={}
+    worker, _ = engines.timing_worker(core)
     for name in NAMES:
         try:
-            _, (capture,)=scores.run_worker(engines.worker(),core,cartridge(name),0,120,30,None,
+            _, (capture,)=scores.run_worker(worker,core,cartridge(name),0,120,30,None,
                                             scores.ADAPTERS[emulator][0],bytes(240),diagnostic=True)
             result[name]=verdict(capture)
         except (ValueError,TimeoutError):

@@ -2,12 +2,13 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import os
+import json
 import subprocess
 import sys
 import time
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from emubench import engines, games
+from emubench import catalog, engines, games
 from emubench.gui import Desktop, WORKLOADS, LOCAL, tk
 
 
@@ -60,6 +61,9 @@ def main():
         assert "checks" in window.accuracy.get()
         rows=tuple(window.rows.values())
         assert len(rows)==1 and Path(rows[0][6]).is_file()
+        if catalog.host_target()=="windows-arm64" and len(sys.argv)==1:
+            trace=json.loads(Path(rows[0][6]).read_text(encoding="utf-8"))
+            assert trace["execution"]=="x64-on-arm64", trace.get("execution")
         sample=next((resources/"benchmark/games/roms/gba").glob("*.gba"))
         window.workload.set("Local ROM file")
         window.workload_changed()

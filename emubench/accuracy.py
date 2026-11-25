@@ -98,7 +98,7 @@ def run(emulator, core, refresh=False):
         from . import color_checks
         return color_checks.run(emulator, core)
     console = "gba" if emulator == "mgba" else "snes"
-    worker = engines.worker()
+    worker, _ = engines.timing_worker(core)
     core_sha, worker_sha = engines.digest(core), engines.digest(worker)
     cache = engines.home() / "conformance" / VERSION / emulator / worker_sha / (core_sha+".json")
     if not refresh and cache.is_file():

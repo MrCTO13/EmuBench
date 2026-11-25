@@ -129,9 +129,9 @@ def main(argv=None):
                 raise ValueError("--system-dir requires a local directory")
             os.environ["EMUBENCH_SYSTEM_DIR"]=str(args.system_dir.resolve())
         if args.command=="duckstation":
-            return duckstation.execute(args)
+            return duckstation.execute(args) or 0
         if args.command=="study":
-            return lab.execute(args)
+            return lab.execute(args) or 0
         if args.command == "bench":
             import uuid
             args.queue = args.queue or engines.home()/"campaigns"/(str(uuid.uuid4())+".sqlite")
@@ -142,7 +142,7 @@ def main(argv=None):
             args.timeout=args.idle_seconds=300
             campaign.create(args)
             args.action="resume"
-            return campaign.execute(args)
+            return campaign.execute(args) or 0
         if args.command == "calibrate":
             calibration.execute(args)
         elif args.command == "catalog":
@@ -218,7 +218,7 @@ def main(argv=None):
                       f"\nPrivate result: {path}")
                 uploads.flush(limit=3)
         elif args.command == "campaign":
-            return campaign.execute(args)
+            return campaign.execute(args) or 0
         elif args.command == "history":
             journal.history(args.game, args.limit)
         elif args.command == "details":

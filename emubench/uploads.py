@@ -31,6 +31,29 @@ def configure(enabled):
             db.execute("UPDATE upload_settings SET lease=NULL,lease_until=0,retry_after=0,failures=0,last_error=NULL")
 
 
+def enabled():
+    with journal.database() as db:
+        return bool(db.execute("SELECT 1 FROM upload_settings WHERE enabled=1").fetchone())
+
+
+def wait_for_pending():
+    announced = False
+    while True:
+        with journal.database() as db:
+            pending = db.execute("""SELECT max(retry_after,lease_until) FROM upload_settings
+                                     WHERE enabled=1 AND EXISTS (SELECT 1 FROM score_outbox)""").fetchone()
+        if not pending:
+            return
+        if not announced:
+            print("Measurements finished. Waiting for queued score uploads.", flush=True)
+            announced = True
+        delay = pending[0] - time.time()
+        if delay > 0:
+            time.sleep(min(delay, 30))
+        else:
+            flush(limit=3)
+
+
 def status():
     with journal.database() as db:
         row = db.execute("SELECT enabled,retry_after,last_error FROM upload_settings").fetchone()

@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from . import accuracy, carter, downloads, engines, journal, scores, uploads
+from . import accuracy, carter, downloads, engines, journal, library, scores, uploads
 
 
 def arguments(commands):
@@ -20,9 +20,11 @@ def arguments(commands):
     actions = group.add_subparsers(dest="action", required=True)
     new = actions.add_parser("create")
     new.add_argument("queue", type=Path)
-    new.add_argument("--rom", type=Path, action="append")
+    new.add_argument("--rom", type=Path, action="append", help="Local ROM, ZIP or directory (repeatable)")
+    new.add_argument("--rom-dir", type=Path, action="append", help="Recursively scan a ROM library (repeatable)")
     new.add_argument("--carter", choices=("all","easy","normal","hard"), help="Queue pinned Carter scenes")
-    new.add_argument("--emulator", choices=tuple(scores.ADAPTERS), default="mgba")
+    new.add_argument("--emulator", choices=(*scores.ADAPTERS, "all"),
+                     help="Select one emulator or all compatible ones (default for directories)")
     build = new.add_mutually_exclusive_group()
     build.add_argument("--version", default=None)
     build.add_argument("--latest-core", action="store_true")
@@ -39,6 +41,9 @@ def arguments(commands):
     for name in ("resume", "status", "export", "retry", "launch-agent"):
         p = actions.add_parser(name)
         p.add_argument("queue", type=Path)
+        if name == "resume":
+            p.add_argument("--wait-uploads", action="store_true",
+                           help="Keep retrying after measurement until the device's upload queue clears")
         if name in ("retry", "export"):
             p.add_argument("--job", type=int, required=True)
         if name in ("export", "launch-agent"):
@@ -61,40 +66,51 @@ def create(args):
         raise ValueError("Idle check must be executable")
     if args.queue.exists():
         raise FileExistsError("Queue already exists. Use campaign resume.")
-    roms = []
-    scene_ids = []
-    if args.carter:
-        if args.rom and len(args.rom) != 1:
-            raise ValueError("A Carter queue accepts one pinned cartridge")
-        console = "gba" if args.emulator == "mgba" else "snes"
-        rom = carter.cartridge(console,args.rom[0] if args.rom else None)
-        for scene in carter.SCENES:
-            if scene.console == console and args.carter in ("all",scene.level):
-                scene_ids.append(scene.profile)
-                roms.append([str(rom),carter.GAMES[console].digest])
-    else:
-        if not args.rom:
-            raise ValueError("Supply --rom or select a Carter suite with --carter")
-        for path in dict.fromkeys(p.expanduser().resolve(strict=True) for p in args.rom):
-            scores.validate_file(path, args.emulator)
-            roms.append([str(path), engines.digest(path)])
-    if args.emulator != "mgba" and args.version:
+    folders = [p.expanduser().resolve(strict=True) for p in args.rom_dir or ()]
+    for folder in folders:
+        if not folder.is_dir():
+            raise ValueError(f"--rom-dir requires a directory: {folder}")
+    paths = [p.expanduser().resolve(strict=True) for p in args.rom or ()] + folders
+    batch = any(p.is_dir() or p.suffix.lower() == ".zip" for p in paths)
+    emulator = args.emulator or ("all" if batch and not (args.core or args.version) else "mgba")
+    if emulator == "all" and (args.core or args.version):
+        raise ValueError("Select one emulator when pinning a particular core or version")
+    if args.version and emulator != "mgba":
         raise ValueError("For SNES select --core PATH or --latest-core")
-    if args.latest_core or ((args.emulator != "mgba" or args.carter) and not (args.core or args.version)):
-        args.core = downloads.latest_core(args.emulator)
-    if args.core:
-        core = args.core.expanduser().resolve(strict=True)
-        commit = None
+    if args.carter:
+        if batch or emulator == "all" or len(paths) > 1:
+            raise ValueError("A Carter queue accepts one emulator and one pinned cartridge")
+        console = "gba" if emulator == "mgba" else "snes"
+        rom = carter.cartridge(console, paths[0] if paths else None)
+        workloads = [dict(path=str(rom), sha256=carter.GAMES[console].digest, emulator=emulator, scene=scene.profile)
+                     for scene in carter.SCENES if scene.console == console and args.carter in ("all", scene.level)]
+    elif not paths:
+        raise ValueError("Supply --rom, --rom-dir or --carter")
+    elif batch or emulator == "all":
+        workloads = library.discover(paths, emulator)
     else:
-        core, meta = engines.install(args.version or engines.REFERENCE)
-        commit = meta["commit"]
-    engines.worker()  # Finish compilation before making the queue eligible.
-    plan = dict(emulator=args.emulator, roms=roms, core=str(core), core_hash=engines.digest(core), commit=commit,
-                version=meta["tag"] if not args.core else None, warmup=args.warmup_frames, frames=args.frames, timeout=args.timeout, loop=args.loop,
-                days=args.days, idle_check=gate, dedicated=args.dedicated, idle_seconds=args.idle_seconds)
-    if scene_ids:
-        plan["scenes"] = scene_ids
-        plan["accuracy"] = accuracy.run(args.emulator,core)
+        workloads = []
+        for path in dict.fromkeys(paths):
+            scores.validate_file(path, emulator)
+            workloads.append(dict(path=str(path), sha256=engines.digest(path), emulator=emulator))
+
+    cores = {}
+    for peer in dict.fromkeys(w["emulator"] for w in workloads):
+        tag = commit = None
+        if args.core:
+            core = args.core.expanduser().resolve(strict=True)
+        elif peer == "mgba" and (args.version or not (args.latest_core or args.carter or batch or emulator == "all")):
+            core, meta = engines.install(args.version or engines.REFERENCE)
+            tag, commit = meta["tag"], meta["commit"]
+        else:
+            core = downloads.latest_core(peer)
+        cores[peer] = dict(path=str(core), sha256=engines.digest(core), tag=tag, commit=commit)
+    engines.worker()
+    plan = dict(workloads=workloads, cores=cores, warmup=args.warmup_frames, frames=args.frames,
+                timeout=args.timeout, loop=args.loop, days=args.days, idle_check=gate,
+                dedicated=args.dedicated, idle_seconds=args.idle_seconds)
+    if args.carter:
+        plan["accuracy"] = accuracy.run(emulator, Path(cores[emulator]["path"]))
     dest = args.queue.expanduser().resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
@@ -105,15 +121,16 @@ def create(args):
             db.execute("""CREATE TABLE jobs (id INTEGER PRIMARY KEY, round INTEGER, rom INTEGER,
                           status TEXT DEFAULT 'pending', attempts INTEGER DEFAULT 0,
                           available REAL DEFAULT 0, error TEXT, result TEXT, UNIQUE(round,rom))""")
+            db.execute("CREATE INDEX pending_jobs ON jobs(id) WHERE status='pending'")
             db.execute("CREATE TABLE failures (job INTEGER, time REAL, reason TEXT)")
             enqueue(db, plan, 1)
         os.link(stage, dest)
-    print(f"Created {dest} with {len(roms)} jobs in round 1")
+    print(f"Created {dest} with {len(workloads)} jobs in round 1")
 
 
 def enqueue(db, plan, number):
     db.executemany("INSERT INTO jobs(round,rom) VALUES (?,?)",
-                   ((number, i) for i in range(len(plan["roms"]))))
+                   ((number, i) for i in range(len(plan["workloads"]))))
 
 
 def idle_gate(plan):
@@ -141,10 +158,19 @@ def state(db, message):
 
 
 def resume(db, path, plan):
+    if "workloads" not in plan:
+        # Preserve job indices, pinned builds and Carter scene identity in v0.4 and older queues.
+        emulator = plan.get("emulator", "mgba")
+        plan["cores"] = {emulator: dict(path=plan["core"], sha256=plan["core_hash"],
+                                        tag=plan.get("version"), commit=plan["commit"])}
+        plan["workloads"] = [dict(path=p, sha256=digest, emulator=emulator)
+                             for p, digest in plan["roms"]]
+        for workload, scene in zip(plan["workloads"], plan.get("scenes", ())):
+            workload["scene"] = scene
     ready = idle_gate(plan)
-    core = Path(plan["core"])
-    if engines.digest(core) != plan["core_hash"]:
-        raise ValueError("The selected core has changed. Create a queue for the new build.")
+    for build in plan["cores"].values():
+        if engines.digest(Path(build["path"])) != build["sha256"]:
+            raise ValueError("A selected core has changed. Create a queue for the new build.")
     with db:
         db.execute("UPDATE campaign SET started=COALESCE(started,?)", (time.time(),))
     start = db.execute("SELECT started FROM campaign").fetchone()[0]
@@ -168,7 +194,7 @@ def resume(db, path, plan):
                     # Permanently failing jobs stay held across rounds until a targeted retry.
                     number = db.execute("SELECT MAX(round) FROM jobs").fetchone()[0] + 1
                     held = {r[0] for r in db.execute("SELECT DISTINCT rom FROM jobs WHERE status='held'")}
-                    eligible = [i for i in range(len(plan["roms"])) if i not in held]
+                    eligible = [i for i in range(len(plan["workloads"])) if i not in held]
                     if eligible:
                         db.executemany("INSERT INTO jobs(round,rom) VALUES (?,?)", [(number, i) for i in eligible])
                         message = f"starting round {number}"
@@ -183,22 +209,26 @@ def resume(db, path, plan):
                 message, wait = "waiting for idle", 15
             else:
                 job_id, number, idx, attempts = job
-                rom, rom_hash = plan["roms"][idx]
-                print(f"Round {number}, job {job_id}", flush=True)
+                workload = plan["workloads"][idx]
+                emulator = workload["emulator"]
+                build = plan["cores"][emulator]
+                rom = Path(workload["path"])
+                local_name = Path(workload.get("member", rom.name)).name
+                print(f"Round {number}, job {job_id}: {local_name} ({emulator})", flush=True)
                 try:
-                    with journal.attempt(Path(rom), plan.get("version") or "local core", f"round {number}, job {job_id}") as (run_id, started):
-                        scene = carter.PROFILES[plan["scenes"][idx]] if plan.get("scenes") else None
-                        result = scores.measure(Path(rom), None, core, scene.warmup if scene else plan["warmup"],
+                    with journal.attempt(Path(local_name), build["tag"] or "local core", f"round {number}, job {job_id}") as (run_id, started):
+                        scene = carter.PROFILES[workload["scene"]] if "scene" in workload else None
+                        result = scores.measure(rom, None, Path(build["path"]), scene.warmup if scene else plan["warmup"],
                                                 carter.FRAMES if scene else plan["frames"], plan["timeout"],
-                                                lambda: time.time() < deadline and ready(), rom_hash,
-                                                plan.get("emulator", "mgba"), scene=scene)
+                                                lambda: time.time() < deadline and ready(), workload["sha256"],
+                                                emulator, scene=scene, member=workload.get("member"))
                         if scene:
                             result["accuracy"] = accuracy.validated(plan["accuracy"],scene.console,
                                                                    result["core_sha256"],result["worker_sha256"])
-                        if result["core_sha256"] != plan["core_hash"]:
+                        if result["core_sha256"] != build["sha256"]:
                             raise ValueError("Core changed during campaign")
-                        result["source_commit"] = plan["commit"]
-                        result.update(id=run_id, local_name=scene.title if scene else Path(rom).name, started_utc=started, finished_utc=journal.now())
+                        result["source_commit"] = build["commit"]
+                        result.update(id=run_id, local_name=scene.title if scene else local_name, started_utc=started, finished_utc=journal.now())
                         # The job, journal and pending upload must survive a restart together.
                         # Attach only after measurement, which uses its own device journal connection.
                         db.execute("ATTACH DATABASE ? AS device", (str(engines.home() / "history.sqlite"),))
@@ -223,7 +253,7 @@ def resume(db, path, plan):
         if message != last_message:
             print(message, flush=True)
             last_message = message
-        uploads.flush(limit=3)
+        uploads.flush(limit=None if finished else 3)
         if finished:
             return
         if wait:
@@ -237,7 +267,11 @@ def execute(args):
     with closing(sqlite3.connect(path, timeout=3600)) as db:
         plan, state_name, heartbeat = db.execute("SELECT plan,state,heartbeat FROM campaign").fetchone()
         if args.action == "resume":
+            if args.wait_uploads and not uploads.enabled():
+                raise ValueError("Run 'emubench uploads enable' before using --wait-uploads")
             resume(db, path, json.loads(plan))
+            if args.wait_uploads:
+                uploads.wait_for_pending()
         elif args.action == "launch-agent":
             if sys.platform != "darwin":
                 raise ValueError("Launch agents are for macOS")

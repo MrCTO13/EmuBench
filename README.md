@@ -70,6 +70,18 @@ Open the HTML file locally. The blue line shows average FPS per interval, and th
 
 ## Unattended campaigns
 
+Point a campaign at a parent directory to benchmark a whole library, including subfolders. On an idle Mac with a signed-in GitHub CLI:
+
+    emubench uploads enable
+    emubench campaign create library.sqlite --rom-dir "/Volumes/Games/ROMs"
+    emubench campaign resume library.sqlite --wait-uploads
+
+The scanner matches GBA (`.gba`) to mGBA and SNES (`.sfc`, `.smc`) to both Snes9x and bsnes. It reads loose images and matching members of ZIP files. Supply `--emulator snes9x` or another supported core to narrow the scan. A folder campaign downloads and pins the current cores for the systems it finds. Add `--dedicated` when creating a queue on a reserved Windows or Linux machine, or supply its idle-check executable.
+
+The queue snapshots the library at creation. Identical copies within a system share one run per emulator per round. Other formats, linked entries inside scanned folders, and macOS archive sidecars are skipped. Scan errors are printed locally. Resume the same queue after an interruption. Create a new one to include newly added games.
+
+Automatic uploads share a summary for each completed measurement. Folder scores use the public title **Personal ROM** and an opaque per-device comparison ID. Paths, filenames, ZIP members and cartridge contents stay local. `--wait-uploads` keeps the process running after measurement until the device's pending summaries have been sent, including when connectivity returns. Ctrl-C and resume later to continue. Use `campaign status library.sqlite` for failed jobs and `uploads status` for pending submissions.
+
 Create a queue once on the test device. Add additional files with repeated --rom arguments. Each device pins the selected core and hashes its own ROMs. Resume it whenever the device is available.
 
     emubench campaign create nightly.sqlite --rom "My Game.gba" --version 0.10.5 --loop --days 14

@@ -107,3 +107,18 @@ class AutomaticUploads(unittest.TestCase):
             self.assertTrue(uploads.flush(force=True))
             self.assertEqual(post.call_count, 1)
         self.assertEqual(self.queued(), [])
+
+    def test_campaign_wait_drains_remaining_scores_after_backoff(self):
+        uploads.configure(True)
+        self.completed()
+        self.completed()
+        def end_backoff(_seconds):
+            with journal.database() as db:
+                db.execute("UPDATE upload_settings SET retry_after=0")
+        with patch.object(scores, "publish", side_effect=[OSError(), self.url, self.url]) as post, \
+                patch.object(uploads.time, "sleep", side_effect=end_backoff) as wait:
+            uploads.wait_for_pending()
+            self.assertEqual(post.call_count, 3)
+            wait.assert_called_once()
+            self.assertGreater(wait.call_args.args[0], 0)
+        self.assertEqual(self.queued(), [])

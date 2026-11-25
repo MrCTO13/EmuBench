@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 
-from . import carter, details, engines, journal
+from . import carter, details, engines, journal, library
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
@@ -24,12 +24,9 @@ ADAPTERS = {"mgba": ("mGBA", PROFILE), "snes9x": ("Snes9x", "snes-boot-no-input-
 
 
 def validate_file(rom, emulator):
-    if emulator == "mgba":
-        extensions, minimum = (".gba",), 192
-    else:
-        extensions, minimum = (".sfc", ".smc"), 32768
-    if rom.suffix.lower() not in extensions or not rom.is_file() or not minimum <= rom.stat().st_size <= 32 * 1024**2:
-        raise ValueError("Choose an unpacked " + " or ".join(extensions) + " cartridge image up to 32 MiB")
+    if not rom.is_file():
+        raise ValueError("Choose a regular cartridge file")
+    library.check_size(rom.name, rom.stat().st_size, emulator)
 
 
 def cpu_model():
@@ -118,17 +115,19 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
         return evidence, tuple((root / name).read_bytes() for name in names)
 
 
-def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_rom=None, emulator="mgba", scene=None):
+def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_rom=None, emulator="mgba", scene=None, member=None):
     if not 100 <= frames <= 1_000_000 or not 0 <= warmup <= 1_000_000 or timeout <= 0:
         raise ValueError("Use 100–1,000,000 measured frames, 0–1,000,000 warm-up frames and a positive timeout")
     name, profile = ADAPTERS[emulator]
-    validate_file(rom, emulator)
-    data = rom.read_bytes()
+    if member is None:
+        validate_file(rom, emulator)
+        data = rom.read_bytes()
+    else:
+        data = library.read_pinned_member(rom, member, emulator)
     rom_hash = hashlib.sha256(data).hexdigest()
     if expected_rom is not None and expected_rom != rom_hash:
         raise ValueError("ROM changed since the campaign was created")
-    if emulator == "mgba" and data[3:4] != b"\xea":
-        raise ValueError("This file does not have the expected GBA cartridge header")
+    library.check_header(data, emulator)
     if emulator != "mgba" and len(data) % 32768 == 512:
         data = data[512:]  # Strip the copier header before handing the cartridge to the core.
     if core:

@@ -13,7 +13,7 @@ from zipfile import BadZipFile
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="emubench", description="Emu Bench presented by Carts")
-    parser.add_argument("--version", action="version", version="Emu Bench 0.4.0")
+    parser.add_argument("--version", action="version", version="Emu Bench 0.5.0")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("emulators", help="List supported emulator downloads")
     dl = commands.add_parser("download", help="Fetch and verify the latest upstream packages")

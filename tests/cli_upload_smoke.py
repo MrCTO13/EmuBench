@@ -43,7 +43,7 @@ def main():
         cli("campaign","resume",legacy)
         assert "done: 1" in cli("campaign","status",legacy)
         assert "off" in cli("uploads","status")
-        cli("uploads","enable")
+        cli("uploads","enable","--destination","github")
         cli("run","--rom",rom.name,"--core",core,"--frames","120","--game","Public Game")
         queue = work/"my campaign.sqlite"
         cli("campaign","create",queue,"--rom",rom,"--core",core,"--frames","120","--dedicated")

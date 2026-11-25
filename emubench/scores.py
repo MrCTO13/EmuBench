@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 
-from . import carter, circuit, details, engines, journal, library
+from . import carter, circuit, details, engines, identify, journal, library
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
@@ -64,7 +64,7 @@ class InterruptedWindow(InterruptedError):
     """The device became busy or another worker owns the measurement slot."""
 
 
-def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False):
+def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False):
     engines.home().mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
            "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
@@ -77,7 +77,9 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
             raise InterruptedWindow("Waiting for idle")
         args = [worker, str(len(data)), str(warmup), str(frames), emulator]
         root = Path(folder)
-        if playback is not None:
+        if paced:
+            args.append("paced")
+        elif playback is not None:
             if len(playback) != 2 * (warmup + frames):
                 raise ValueError("Controller recording has the wrong length")
             (root / "controller.bin").write_bytes(playback)
@@ -110,6 +112,8 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
                 if proc.poll() is None:
                     proc.kill()
         evidence = (root / "frame-evidence").read_text(encoding="ascii").splitlines()
+        if paced:
+            return evidence, (root / "paced-result").read_text().split()
         if playback is None:
             return evidence, ()
         names = ["final-frame"] if diagnostic else ["scene-start", "scene-end"]
@@ -144,6 +148,10 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     output, checkpoints = run_worker(worker, core, data, warmup, frames, timeout, ready, name,
                                      scene.playback if scene else None)
     scene_evidence = {}
+    if not scene:
+        edition = identify.match("gba" if emulator == "mgba" else "snes", data)
+        if edition:
+            scene_evidence["catalog_match"] = edition
     if scene:
         scene_evidence["scene_checkpoints"] = scene.validate(rom_hash, warmup, frames, checkpoints)
         profile = scene.profile
@@ -154,7 +162,7 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
     times = list(map(int, output[5:]))
     return {**scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
-            "comparison_id": journal.comparison_id(rom_hash),
+            "comparison_id": journal.comparison_id(rom_hash), "device_id": journal.comparison_id("installation"),
             "emulator": name, "version": version, "source_commit": commit,
             "core_sha256": core_hash, "worker_sha256": engines.digest(worker),
             "rom_sha256": rom_hash,
@@ -162,6 +170,20 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
             "warmup_frames": warmup, "frames": frames, "rendered_frames": len(times),
             "sampled_frame_changes": int(visual_changes), "audio_sample_frames": int(audio), "pixel_sample_signature": fingerprint,
             "frame_ns": times, **stats(times)}
+
+
+def paced_pass(result, core, rom, timeout):
+    worker = engines.worker()
+    data = rom.read_bytes()
+    if engines.digest(core) != result["core_sha256"] or engines.digest(worker) != result["worker_sha256"] or hashlib.sha256(data).hexdigest() != result["rom_sha256"]:
+        raise ValueError("Workload, core or worker changed before the paced test")
+    if result["emulator"] != "mGBA" and len(data) % 32768 == 512:
+        data = data[512:]
+    _, fields = run_worker(worker, core, data, result["warmup_frames"], result["frames"], timeout,
+                           None, result["emulator"], paced=True)
+    frames, late, missing, fps, audio = fields
+    return {"frames":int(frames), "missed_deadlines":int(late), "audio_underrun_frames":int(missing),
+            "refresh_hz":float(fps), "sample_rate":float(audio)}
 
 
 def save(result, destination):
@@ -206,6 +228,11 @@ def public_fields(result, title):
         title = scene.title
     if result["schema"] != 1 or not allowed:
         raise ValueError("Unknown result format")
+    edition = result.get("catalog_match") if result.get("share_title") is True and not scene else None
+    if edition:
+        if not re.fullmatch(r"[a-f0-9]{64}", edition["edition"]):
+            raise ValueError("Invalid catalog edition")
+        title = edition["title"]
     title = public_title(title)
     if (result["system"] not in ("Darwin", "Linux", "Windows") or
         not re.fullmatch(r"[A-Za-z0-9_-]{1,24}", result["arch"]) or
@@ -222,13 +249,29 @@ def public_fields(result, title):
     cpu = result.get("cpu", "Unknown")
     if not isinstance(cpu, str) or not 1 <= len(cpu) <= 160 or not cpu.isprintable():
         raise ValueError("Invalid processor model")
-    cohort = {}
+    cohort = {"edition":edition["edition"]} if edition else {}
     if "accuracy" in result:
         cohort["accuracy"] = validated(result["accuracy"], "gba" if result["emulator"] == "mGBA" else "snes",
                                        result["core_sha256"], result["worker_sha256"])
     if scene:
         cohort["scene_checkpoints"] = list(result["scene_checkpoints"])
         cohort["scene_description"] = scene.description
+    for field in ("device_id", "campaign_id"):
+        if field in result:
+            cohort[field] = str(uuid.UUID(result[field]))
+    if "chips" in result:
+        from .chips import NAMES
+        data = result["chips"]
+        if result["emulator"] == "mGBA" or set(data) != set(NAMES) or any(v not in ("pass","fail","unresolved") for v in data.values()):
+            raise ValueError("Invalid coprocessor check results")
+        cohort["chips"] = {name:data[name] for name in NAMES}
+    if "paced" in result:
+        data = result["paced"]
+        if (data["frames"] != n or type(data["missed_deadlines"]) is not int or not 0 <= data["missed_deadlines"] <= n
+                or type(data["audio_underrun_frames"]) is not int or not 0 <= data["audio_underrun_frames"] <= 10**10
+                or not 45 <= data["refresh_hz"] <= 75 or not 8000 <= data["sample_rate"] <= 192000):
+            raise ValueError("Invalid paced results")
+        cohort["paced"] = {k:data[k] for k in ("frames","missed_deadlines","audio_underrun_frames","refresh_hz","sample_rate")}
     if "comparison_id" in result:
         cohort["comparison_id"] = str(uuid.UUID(result["comparison_id"]))
     return {**cohort, "run_id": str(uuid.UUID(result["id"])), "game": title, "profile": result["profile"],

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emubench"
-version = "0.5.0"
+version = "0.6.0"
 requires-python = ">=3.10"
 description = "Measure uncapped GBA and Super NES core performance"
 license = {file = "LICENSE"}
@@ -16,4 +16,4 @@ emubench = "emubench.cli:main"
 packages = ["emubench"]
 
 [tool.setuptools.package-data]
-emubench = ["report.html", "chart.js", "compare.js", "native/*.c", "native/*.h", "native/CMakeLists.txt"]
+emubench = ["report.html", "desktop.html", "chart.js", "compare.js", "native/*.c", "native/*.h", "native/CMakeLists.txt"]

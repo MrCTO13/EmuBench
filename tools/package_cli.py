@@ -17,6 +17,7 @@ entry.parent.mkdir(exist_ok=True)
 entry.write_text("from emubench.cli import main\nraise SystemExit(main())\n", encoding="utf-8")
 subprocess.run([sys.executable, "-m", "PyInstaller", "--onefile", "--clean", "--noconfirm",
                 "--paths", ".", "--name", "emubench",
+                "--add-data", "emubench/desktop.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/report.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/chart.js" + os.pathsep + "emubench",
                 "--add-data", "emubench/compare.js" + os.pathsep + "emubench",

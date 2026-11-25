@@ -40,7 +40,7 @@ def main():
         queue = work/"folder.sqlite"
         created = cli("campaign","create",queue,"--rom-dir",library,"--frames","120","--dedicated")
         assert "3 jobs" in created and "1 duplicate" in created, created
-        cli("uploads","enable",offline=True)
+        cli("uploads","enable","--destination","github",offline=True)
         cli("campaign","resume",queue,offline=True)
         cli("campaign","resume",queue,offline=True)
         assert "done: 3" in cli("campaign","status",queue,offline=True)

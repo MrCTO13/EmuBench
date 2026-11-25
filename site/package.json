@@ -1,0 +1,1 @@
+{"private":true,"type":"module","scripts":{"db:generate":"drizzle-kit generate --dialect sqlite --schema ./db/schema.ts --out ./drizzle"},"devDependencies":{"drizzle-orm":"0.44.7","drizzle-kit":"0.31.6"}}

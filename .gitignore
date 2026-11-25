@@ -13,3 +13,5 @@ dist/
 results/
 *.sfc
 *.smc
+
+node_modules/

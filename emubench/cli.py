@@ -5,16 +5,19 @@ import sqlite3
 import subprocess
 import sys
 
-from . import accuracy, campaign, carter, circuit, details, downloads, engines, journal, scores, uploads
+from . import accuracy, calibration, campaign, carter, chips, circuit, desktop, details, downloads, engines, identify, journal, scores, service, uploads
 from .catalog import CATALOG, TARGETS, host_target
 from http.client import HTTPException
 from zipfile import BadZipFile
 
 
 def main(argv=None):
+    if not (sys.argv[1:] if argv is None else argv):
+        return desktop.launch()
     parser = argparse.ArgumentParser(prog="emubench", description="Emu Bench presented by Carts")
-    parser.add_argument("--version", action="version", version="Emu Bench 0.5.0")
+    parser.add_argument("--version", action="version", version="Emu Bench 0.6.0")
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("desktop", help="Open the local desktop launcher")
     commands.add_parser("emulators", help="List supported emulator downloads")
     dl = commands.add_parser("download", help="Fetch and verify the latest upstream packages")
     which = dl.add_mutually_exclusive_group(required=True)
@@ -42,14 +45,16 @@ def main(argv=None):
     run.add_argument("--frames", type=int, default=1800)
     run.add_argument("--timeout", type=int, default=300, help="Worker timeout in seconds")
     run.add_argument("--out", type=Path, help="Private result JSON destination")
-    publish = commands.add_parser("publish", help="Review and publish a score on GitHub")
+    publish = commands.add_parser("publish", help="Review and publish a public score")
     publish.add_argument("result", type=Path)
     publish.add_argument("--game", default="Personal ROM", help="Optional public display title")
     publish.add_argument("--preview", action="store_true", help="Print the public fields and exit offline")
+    publish.add_argument("--destination", choices=("service","github"), default="service")
     publish.add_argument("--yes", action="store_true", help="Approve public submission without a prompt")
     sharing = commands.add_parser("uploads", help="Manage automatic uploads of public score summaries on this device")
     sharing.add_argument("action", choices=["enable", "disable", "status", "sync"],
-                         help="Enable uploads of future scores to the public GitHub scoreboard, disable and discard pending uploads, show status, or retry pending scores")
+                         help="Enable uploads of future scores to the selected public scoreboard, disable and discard pending uploads, show status, or retry pending scores")
+    sharing.add_argument("--destination", choices=("service","github"), default="service", help="Destination for new enrollment")
     hist = commands.add_parser("history", help="Show this device's private run log")
     hist.add_argument("--game", default="")
     hist.add_argument("--limit", type=int, default=20)
@@ -65,27 +70,58 @@ def main(argv=None):
     suites.add_argument("--scene", choices=("all","easy","normal","hard"), default="all")
     suites.add_argument("--out-dir", type=Path, help="Private directory for per-scene trace files")
     official = commands.add_parser("suite", help="Build and run the public Carter Circuit workload")
+    for command in (run, official):
+        command.add_argument("--paced", action="store_true", help="Also measure scheduled frame deadlines and audio supply")
     official.add_argument("--scene", choices=("all", *circuit.LEVELS), default="all")
+    official.add_argument("--checks", action="store_true", help="Also run the pinned upstream CPU/memory diagnostics")
     official.add_argument("--out-dir", type=Path)
     official.add_argument("--expect-core", metavar="SHA256", help="Require an exact emulator binary")
     diag = commands.add_parser("accuracy", help="Run the named upstream CPU/memory conformance programs")
     diag.add_argument("--out", type=Path, help="Write the diagnostic results as JSON")
     diag.add_argument("--refresh", action="store_true", help="Re-run even if this build has a cached result")
-    for command in (suites, official, diag):
+    chipcmd = commands.add_parser("chips", help="Run original SA-1 and Super FX functional checks")
+    for command in (suites, official, diag, chipcmd):
         command.add_argument("--emulator", choices=tuple(scores.ADAPTERS), required=True)
         source = command.add_mutually_exclusive_group()
         source.add_argument("--core", type=Path, help="Pinned local core. By default fetch the latest prebuilt core.")
         source.add_argument("--version", metavar="TAG|latest", help="Build a specific mGBA release")
+    catalog = commands.add_parser("catalog", help="Install edition metadata or identify a cartridge locally")
+    catalog.add_argument("action", choices=("install","match"))
+    catalog.add_argument("console", choices=("gba","snes"))
+    catalog.add_argument("--rom", type=Path)
+    run.add_argument("--share-title", action="store_true", help="Include matched edition and catalog name in public scores")
+    pilot = commands.add_parser("calibrate", help="Run or resume a randomized paired duration pilot")
+    pilot.add_argument("--emulator", choices=tuple(scores.ADAPTERS), required=True)
+    pilot.add_argument("--core", type=Path, required=True)
+    pilot.add_argument("--rom", type=Path, help="Default to the generated Circuit scene")
+    pilot.add_argument("--scene", choices=circuit.LEVELS, default="hard")
+    pilot.add_argument("--blocks", type=int, default=8)
+    pilot.add_argument("--windows", type=int, nargs="+", default=[600,1800,3600])
+    pilot.add_argument("--seed", type=int, default=4171)
+    pilot.add_argument("--out", required=True, type=Path)
     campaign.arguments(commands)
     args = parser.parse_args(argv)
     try:
-        if args.command == "emulators":
+        if args.command == "calibrate":
+            calibration.execute(args)
+        elif args.command == "catalog":
+            if args.action == "install":
+                print(f"Installed {identify.install(args.console)} catalog entries")
+            else:
+                if not args.rom:
+                    raise ValueError("Supply --rom PATH")
+                scores.validate_file(args.rom, "mgba" if args.console == "gba" else "snes9x")
+                match = identify.match(args.console, args.rom.read_bytes())
+                print(match["title"] if match else "No match in installed catalog")
+        elif args.command == "desktop":
+            desktop.launch()
+        elif args.command == "emulators":
             for key, item in CATALOG.items():
                 providers = (["desktop"] if item.assets else []) + (["core"] if item.core else [])
                 print(f"{key:<20} {item.name:<19} {', '.join(providers)}")
         elif args.command == "uploads":
             if args.action in ("enable", "disable"):
-                uploads.configure(args.action == "enable")
+                uploads.configure(args.action == "enable", args.destination)
             if args.action == "sync" and not uploads.flush(force=True):
                 uploads.status()
                 return 1
@@ -93,7 +129,7 @@ def main(argv=None):
         elif args.command == "download":
             return downloads.batch(CATALOG if args.all else [args.emulator], args.target or host_target(),
                                    args.channel, args.version, args.list_only)
-        elif args.command in ("carter","suite","accuracy"):
+        elif args.command in ("carter","suite","accuracy","chips"):
             release = None
             if args.version:
                 if args.emulator != "mgba":
@@ -102,11 +138,19 @@ def main(argv=None):
             else:
                 core = args.core.expanduser().resolve(strict=True) if args.core else downloads.latest_core(args.emulator)
             console = "gba" if args.emulator == "mgba" else "snes"
+            if args.command == "chips":
+                record = chips.run(args.emulator, core)
+                print(json.dumps(record,indent=2))
+                return int(any(v != "pass" for v in record.values()))
             if args.command == "carter":
                 rom = carter.cartridge(console, args.rom)
             if args.command == "suite":
                 if args.expect_core and engines.digest(core) != args.expect_core:
                     raise ValueError("Selected core differs from the requested binary digest")
+                tested_core = engines.digest(core)
+                extra = {"chips": chips.run(args.emulator, core)} if console == "snes" else {}
+                if args.checks:
+                    extra["accuracy"] = accuracy.run(args.emulator, core)
                 for scene in circuit.SCENES:
                     if scene.console != console or args.scene not in ("all", scene.level):
                         continue
@@ -114,6 +158,11 @@ def main(argv=None):
                     with journal.attempt(rom, core.name, scene.title) as (run_id, start):
                         result = scores.measure(rom, None, core, scene.warmup, circuit.FRAMES, 120,
                                                 expected_rom=scene.digest, emulator=args.emulator, scene=scene)
+                        if result["core_sha256"] != tested_core:
+                            raise ValueError("Core changed during the suite")
+                        result.update(extra)
+                        if args.paced:
+                            result["paced"] = scores.paced_pass(result, core, rom, 120)
                         if release:
                             if result["core_sha256"] != release["sha256"] or result["version"] != release["tag"]:
                                 raise ValueError("Measured core differs from the requested release")
@@ -193,6 +242,10 @@ def main(argv=None):
             with journal.attempt(rom, str(args.core.name if args.core else args.version or engines.REFERENCE)) as (run_id, start):
                 result = scores.measure(rom.expanduser(), args.version, args.core, args.warmup_frames,
                                         args.frames, args.timeout, emulator=args.emulator)
+                if args.paced:
+                    core = args.core or engines.install(args.version or engines.REFERENCE)[0]
+                    result["paced"] = scores.paced_pass(result, core.resolve(), rom.expanduser(), args.timeout)
+                result["share_title"] = args.share_title
                 result.update(id=run_id, local_name=rom.name, started_utc=start, finished_utc=journal.now())
                 path = scores.save(result, args.out)
                 journal.complete(result, path, args.game)
@@ -209,9 +262,9 @@ def main(argv=None):
             if not args.yes:
                 if not sys.stdin.isatty():
                     parser.error("use --preview to inspect, then --yes to submit from a script")
-                if input(f"Publish to {scores.REPOSITORY} as a public issue under your GitHub account? [y/N] ").lower() != "y":
+                if input(f"Publish this score to the {args.destination} scoreboard? [y/N] ").lower() != "y":
                     return 0
-            print(scores.publish(public))
+            print((service.publish if args.destination == "service" else scores.publish)(public))
         return 0
     except (scores.InterruptedWindow, HTTPException, BadZipFile, sqlite3.Error, OSError, ValueError, KeyError, TypeError, EOFError, subprocess.SubprocessError) as error:
         print(f"Emu Bench: {error}", file=sys.stderr)

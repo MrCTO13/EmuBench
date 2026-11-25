@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="260" viewBox="0 0 232 52" role="img" aria-label="CARTS" shape-rendering="crispEdges">
+  <title>CARTS</title>
+  <g fill="#ffffff">
+    <path id="glyph-C" d="M10 0h22v12h-22z M0 10h12v12h-12z M30 10h12v12h-12z M0 20h12v12h-12z M0 30h12v12h-12z M30 30h12v12h-12z M10 40h22v12h-22z"/>
+    <path id="glyph-A" d="M60 0h22v12h-22z M50 10h12v12h-12z M80 10h12v12h-12z M50 20h12v12h-12z M80 20h12v12h-12z M50 30h42v12h-42z M50 40h12v12h-12z M80 40h12v12h-12z"/>
+    <path id="glyph-R" d="M110 0h22v12h-22z M100 10h12v12h-12z M130 10h12v12h-12z M100 20h32v12h-32z M100 30h12v12h-12z M130 30h12v12h-12z M100 40h12v12h-12z M130 40h12v12h-12z"/>
+    <path id="glyph-T" d="M150 0h32v12h-32z M160 10h12v12h-12z M160 20h12v12h-12z M160 30h12v12h-12z M160 40h12v12h-12z"/>
+    <path id="glyph-S" d="M200 0h32v12h-32z M190 10h12v12h-12z M200 20h22v12h-22z M220 30h12v12h-12z M190 40h32v12h-32z"/>
+  </g>
+</svg>

@@ -288,6 +288,12 @@ def get(key, target, channel="auto", version="latest", plan=False):
 
 
 def latest_core(key):
+    if host_target() == "windows-arm64":
+        if key == "mgba":
+            return engines.install("latest")[0]
+        if key in ("snes9x","bsnes"):
+            from . import winarm
+            return winarm.install(key)[0]
     spec, path = get(key, host_target(), "core")
     print(f"{CATALOG[key].name} core {spec.version}: {path}", file=sys.stderr)
     return path
@@ -310,7 +316,16 @@ def batch(keys, target, channel, version, plan):
     failures = 0
     for key in keys:
         try:
-            describe(*get(key, target, channel, version, plan))
+            if target == "windows-arm64" and target == host_target() and channel != "desktop" and key in ("mgba","snes9x","bsnes"):
+                if plan:
+                    print(f"{CATALOG[key].name}: native upstream source build ({version})")
+                elif key == "mgba":
+                    print(engines.install(version)[0])
+                else:
+                    from . import winarm
+                    print(winarm.install(key, None if version == "latest" else version)[0])
+            else:
+                describe(*get(key, target, channel, version, plan))
         except (OSError, ValueError, BadZipFile, EOFError, HTTPException) as exc:
             failures += 1
             print(f"{CATALOG[key].name}: {exc}", file=sys.stderr)

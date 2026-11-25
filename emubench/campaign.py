@@ -1,6 +1,7 @@
 """A private, restartable queue. Each finished measurement is one SQLite transaction."""
 from contextlib import closing
 import ctypes
+import uuid
 import hashlib
 import json
 import os
@@ -22,6 +23,7 @@ def arguments(commands):
     new.add_argument("queue", type=Path)
     new.add_argument("--rom", type=Path, action="append", help="Local ROM, ZIP or directory (repeatable)")
     new.add_argument("--rom-dir", type=Path, action="append", help="Recursively scan a ROM library (repeatable)")
+    new.add_argument("--share-title", action="store_true", help="Share known catalog names and editions")
     new.add_argument("--carter", choices=("all","easy","normal","hard"), help="Queue pinned Carter scenes")
     new.add_argument("--emulator", choices=(*scores.ADAPTERS, "all"),
                      help="Select one emulator or all compatible ones (default for directories)")
@@ -106,7 +108,7 @@ def create(args):
             core = downloads.latest_core(peer)
         cores[peer] = dict(path=str(core), sha256=engines.digest(core), tag=tag, commit=commit)
     engines.worker()
-    plan = dict(workloads=workloads, cores=cores, warmup=args.warmup_frames, frames=args.frames,
+    plan = dict(share_title=args.share_title, campaign_id=str(uuid.uuid4()), workloads=workloads, cores=cores, warmup=args.warmup_frames, frames=args.frames,
                 timeout=args.timeout, loop=args.loop, days=args.days, idle_check=gate,
                 dedicated=args.dedicated, idle_seconds=args.idle_seconds)
     if args.carter:
@@ -125,6 +127,7 @@ def create(args):
             db.execute("CREATE TABLE failures (job INTEGER, time REAL, reason TEXT)")
             enqueue(db, plan, 1)
         os.link(stage, dest)
+    print(f"Shared campaign (when uploads are enabled): {uploads.service.ORIGIN}/campaign/{plan['campaign_id']}")
     print(f"Created {dest} with {len(workloads)} jobs in round 1")
 
 
@@ -228,6 +231,9 @@ def resume(db, path, plan):
                                                                    result["core_sha256"],result["worker_sha256"])
                         if result["core_sha256"] != build["sha256"]:
                             raise ValueError("Core changed during campaign")
+                        result["share_title"] = plan.get("share_title", False)
+                        if plan.get("campaign_id"):
+                            result["campaign_id"] = plan["campaign_id"]
                         result["source_commit"] = build["commit"]
                         result.update(id=run_id, local_name=scene.title if scene else local_name, started_utc=started, finished_utc=journal.now())
                         # The job, journal and pending upload must survive a restart together.

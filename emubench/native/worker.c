@@ -22,6 +22,7 @@
 static struct {
     unsigned (*api_version)(void);
     void (*init)(void), (*deinit)(void), (*run)(void), (*unload_game)(void);
+    void (*get_system_av_info)(struct retro_system_av_info *);
     void (*get_system_info)(struct retro_system_info *);
     void (*set_environment)(retro_environment_t);
     void (*set_video_refresh)(retro_video_refresh_t);
@@ -77,6 +78,20 @@ static uint64_t clock_ns(void) {
     if (clock_gettime(CLOCK_MONOTONIC, &now)) exit(fail("Monotonic clock failed"));
     return (uint64_t)now.tv_sec * 1000000000ull + now.tv_nsec;
 #endif
+}
+/* Wait outside retro_run. Count scheduler delays as part of headless delivery. */
+static void wait_until(uint64_t target) {
+    uint64_t now;
+    while ((now = clock_ns()) < target) {
+        uint64_t remain = target - now;
+#ifdef _WIN32
+        if (remain > 2000000) Sleep((DWORD)((remain - 1000000) / 1000000));
+        else SwitchToThread();
+#else
+        struct timespec delay = {(time_t)(remain / 1000000000), (long)(remain % 1000000000)};
+        nanosleep(&delay, NULL);
+#endif
+    }
 }
 static bool environment(unsigned command, void *data) {
     switch (command) {
@@ -173,7 +188,7 @@ static int open_core(void) {
     if (!symbol) return fail("Missing libretro entry point: " #field); \
     memcpy(&core.field, &symbol, sizeof(symbol)); } while (0)
     BIND(api_version); BIND(init); BIND(deinit); BIND(run); BIND(unload_game);
-    BIND(get_system_info); BIND(set_environment); BIND(set_video_refresh);
+    BIND(get_system_av_info); BIND(get_system_info); BIND(set_environment); BIND(set_video_refresh);
     BIND(set_audio_sample); BIND(set_audio_sample_batch); BIND(set_input_poll);
     BIND(set_input_state); BIND(load_game);
     return core.api_version() == RETRO_API_VERSION ? 0 : fail("Unsupported libretro API");
@@ -227,7 +242,8 @@ int main(int argc, char **argv) {
     if (!core.load_game(&game)) return fail("Core could not load this ROM");
     uint8_t *replay = NULL;
     bool diagnostic = false;
-    if (argc == 6) {
+    bool paced = argc == 6 && !strcmp(argv[5], "paced");
+    if (argc == 6 && !paced) {
         diagnostic = !strcmp(argv[5], "diagnostic");
         if (!diagnostic && strcmp(argv[5], "replay")) return fail("Unknown workload mode");
         size_t length = (size_t)(warmup + frames) * 2;
@@ -248,21 +264,44 @@ int main(int argc, char **argv) {
     visual_changes = 0;
     have_previous = false;
     signature = 2166136261u;
-    uint64_t last = clock_ns();
+    struct retro_system_av_info av = {0};
+    core.get_system_av_info(&av);
+    if (paced && (!(av.timing.fps >= 45 && av.timing.fps <= 75) ||
+                  !(av.timing.sample_rate >= 8000 && av.timing.sample_rate <= 192000)))
+        return fail("Unsupported core refresh rate or audio sample rate");
+    long late = 0;
+    uint64_t missing = 0, last = clock_ns(), epoch = last;
+    /* Two refresh periods of initial audio buffering. No physical audio device is involved. */
+    uint64_t reserve = paced ? (uint64_t)(2 * av.timing.sample_rate / av.timing.fps) : 0;
     for (long i = 0; i < frames; i++) {
         if (replay) {
             long pos = (warmup + i) * 2;
             buttons = (uint16_t)(replay[pos] | replay[pos+1] << 8);
         }
+        if (paced) wait_until(epoch + (uint64_t)(i * 1e9 / av.timing.fps));
+        uint64_t supplied = audio_frames;
         renders = 0;
         core.run();
         uint64_t now = clock_ns();
         if (bad_video || renders != 1 || now <= last)
             return fail("Expected one completed software framebuffer per timed frame and a positive duration");
+        if (paced) {
+            uint64_t due = epoch + (uint64_t)((i + 1) * 1e9 / av.timing.fps);
+            if (now > due) ++late;
+            uint64_t consumed = (uint64_t)((now - epoch) * (av.timing.sample_rate / 1e9));
+            if (consumed > reserve + supplied + missing)
+                missing = consumed - reserve - supplied;
+        }
         timings[i] = now - last;
         last = now;
     }
     if (!audio_frames) return fail("Core emitted no audio samples");
+    if (paced) {
+        FILE *report = fopen("paced-result", "w");
+        if (!report) return fail("Could not save paced report");
+        fprintf(report, "%ld %ld %" PRIu64 " %.9f %.9f\n", frames, late, missing, av.timing.fps, av.timing.sample_rate);
+        if (fclose(report)) return fail("Incomplete paced report");
+    }
     FILE *evidence = fopen("frame-evidence", "wb");
     if (!evidence) return fail("Could not save measured frame times");
     fprintf(evidence, "EB2\n%s\n%" PRIu64 "\n%016" PRIx64 "\n%" PRIu32 "\n", version, audio_frames, signature, visual_changes);

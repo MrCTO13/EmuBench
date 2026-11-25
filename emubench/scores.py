@@ -221,6 +221,7 @@ def public_fields(result, title):
                                        result["core_sha256"], result["worker_sha256"])
     if scene:
         cohort["scene_checkpoints"] = list(result["scene_checkpoints"])
+        cohort["scene_description"] = scene.description
     if "comparison_id" in result:
         cohort["comparison_id"] = str(uuid.UUID(result["comparison_id"]))
     return {**cohort, "run_id": str(uuid.UUID(result["id"])), "game": title.strip(), "profile": result["profile"],

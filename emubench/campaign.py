@@ -27,8 +27,8 @@ def arguments(commands):
     build.add_argument("--version", default=None)
     build.add_argument("--latest-core", action="store_true")
     build.add_argument("--core", type=Path)
-    new.add_argument("--warmup-frames", type=int, default=120)
-    new.add_argument("--frames", type=int, default=1800)
+    new.add_argument("--warmup-frames", type=int)
+    new.add_argument("--frames", type=int)
     new.add_argument("--timeout", type=int, default=300)
     new.add_argument("--loop", action="store_true", help="Enqueue a new numbered round after each pass")
     new.add_argument("--days", type=float, help="Maximum elapsed days from first resume")
@@ -46,6 +46,10 @@ def arguments(commands):
 
 
 def create(args):
+    if args.carter and (args.frames is not None or args.warmup_frames is not None):
+        raise ValueError("A Carter scene defines its own setup and measurement window")
+    args.frames = 1800 if args.frames is None else args.frames
+    args.warmup_frames = 120 if args.warmup_frames is None else args.warmup_frames
     if not 100 <= args.frames <= 1_000_000 or not 0 <= args.warmup_frames <= 1_000_000:
         raise ValueError("Invalid frame window")
     if args.timeout < 1 or args.idle_seconds < 1 or args.days is not None and not 0 < args.days <= 3650:

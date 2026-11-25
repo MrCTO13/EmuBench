@@ -3,7 +3,7 @@ from html import escape
 
 RELEASES = "https://github.com/MrCTO13/EmuBench/releases/download"
 DESKTOP_VERSION = "0.8.0-rc.2"
-CLI_VERSION = "0.8.0-rc.1"
+CLI_VERSION = "0.8.0-rc.2"
 CHOICES = {
     "mac": ("Mac app", "Apple silicon and Intel"),
     "windows": ("Windows app", "x64 and ARM64"),

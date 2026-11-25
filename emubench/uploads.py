@@ -60,7 +60,10 @@ def destination_for(db):
         row = db.execute("SELECT name FROM upload_destination WHERE id=1").fetchone()
         if row:
             return row[0]
-    return "github"  # Preserve existing enrollments and their queued scores.
+    # Pre-service enrollments and their outbox were explicitly configured for GitHub.
+    if db.execute("SELECT 1 FROM upload_settings LIMIT 1").fetchone():
+        return "github"
+    return "service"
 
 
 def enabled():

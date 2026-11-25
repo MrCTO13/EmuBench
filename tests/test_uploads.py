@@ -41,6 +41,15 @@ class AutomaticUploads(unittest.TestCase):
         with journal.database() as db:
             return [json.loads(row[0]) for row in db.execute("SELECT payload FROM score_outbox ORDER BY rowid")]
 
+    def test_scoreboard_on_a_new_install_and_legacy_enrollment(self):
+        with journal.database() as db:
+            self.assertEqual(uploads.destination_for(db), "service")
+            db.execute("INSERT INTO upload_settings(id,enabled) VALUES (1,1)")
+            self.assertEqual(uploads.destination_for(db), "github")
+        uploads.configure(True, "service")
+        with journal.database() as db:
+            self.assertEqual(uploads.destination_for(db), "service")
+
     def test_opt_in_has_no_backfill_and_filter_is_shared(self):
         self.completed()
         uploads.configure(True)

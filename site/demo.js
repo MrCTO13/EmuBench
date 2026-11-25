@@ -13,7 +13,7 @@ function demoRows() {
         worst_ms:1000/(avg*.60),worst_frame:1+i*Math.floor(n/16),worst_at_ms:elapsed*(i+.5)/16}))});
   }
   for(const machine of [1,2])for(const [emu,ver,rate,key] of [["Snes9x","example A",610,"a"],["bsnes","example B",480,"b"],["CartsSNES","example C",570,"c"],["CartsSNES","example D",592,"d"]]){
-    ["easy","normal","hard"].forEach((level,i)=>add("Carter Circuit (SNES "+level+")","snes-circuit-"+level+"-v1",emu,ver,machine,rate-i*54+machine*28,key));
+    ["easy","normal","hard"].forEach((level,i)=>add("Carter Circuit (SNES "+level+")","snes-circuit-"+level+"-v2",emu,ver,machine,rate-i*54+machine*28,key));
     for(const [i,game] of ["Super Mario World (USA)","Star Fox (USA)","Super Mario RPG (USA)"].entries())
       add(game,"snes-boot-no-input-v1",emu,ver,machine,rate-i*48+machine*12,key,"demo-edition-"+i);
   }

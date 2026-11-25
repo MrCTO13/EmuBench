@@ -9,7 +9,7 @@ from emubench import adapters, carter, chips, circuit, color_checks, lab
 
 out = Path(sys.argv[1])
 profiles = {s.profile: dict(console=s.console, title=s.title, description=s.description, warmup=s.warmup,
-                            frames=m.FRAMES, references=s.references) for m in (carter, circuit) for s in m.SCENES}
+                            frames=m.FRAMES, references=s.references) for m in (carter, circuit) for s in m.PROFILES.values()}
 page = (root / "index.html").read_text()
 page = page.replace("__EMU__", (root / "assets/emu-bench-wordmark.svg").read_text())
 registry = {"studies":lab.studies(),"receipts":[]}

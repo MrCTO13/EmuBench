@@ -70,7 +70,7 @@ function parse(issue){
   if(issue.pull_request||!Number.isInteger(issue.number)||!issue.title.startsWith("[Score "))return;
   const m=(issue.body||"").match(/\x60{3}json\s*([\s\S]*?)\x60{3}/);if(!m)return;
   try{const r=JSON.parse(m[1]);const system=r.emulator==="mGBA"?"gba":["Snes9x","bsnes","CartsSNES"].includes(r.emulator)?"snes":null;
-    const profiles=system?[system+"-boot-no-input-v1",...["carter","circuit"].flatMap(kind=>["easy","normal","hard"].map(s=>system+"-"+kind+"-"+s+"-v1"))]:[];
+    const profiles=system?[system+"-boot-no-input-v1",...["carter","circuit"].flatMap(kind=>["easy","normal","hard"].flatMap(s=>(kind==="circuit"?["v1","v2"]:["v1"]).map(v=>system+"-"+kind+"-"+s+"-"+v)))]:[];
     if(!profiles.includes(r.profile)||!validAccuracy(r)||typeof r.game!=="string"||!r.game.length||r.game.length>90)return;
     if(!["version","os","arch"].every(k=>typeof r[k]==="string"&&r[k].length<=100))return;
     if(!["average_fps","low_1pct_fps","high_1pct_fps"].every(k=>Number.isFinite(r[k])&&r[k]>=0))return;

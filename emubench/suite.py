@@ -42,7 +42,7 @@ def run(args, core, release):
                 attest.complete(result)
                 path=scores.save(result,dest)
                 journal.complete(result,path)
-            print(f"{scene.title} · {result['average_fps']} avg / {result['low_1pct_fps']} low / "
+            print(f"{scene.title} · {result['speed_x']:.2f}× · {result['average_fps']} avg / {result['low_1pct_fps']} low / "
                   f"{result['high_1pct_fps']} high FPS\nPrivate result: {path}")
         except scores.InterruptedWindow:
             raise

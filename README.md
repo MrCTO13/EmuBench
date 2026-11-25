@@ -179,3 +179,5 @@ The primary unit is × real time. EmuBench divides the unrounded rendered frame 
 ### Standalone executables
 
 Use the mgba-perf or duckstation subcommand with --runner PATH and --rom PATH. DuckStation also needs --system-dir BIOS_DIR. Select the upstream mGBA profiler (CMake BUILD_PERF=ON) or DuckStation regression runner. Both run headless in software. The harness measures launch through exit, including startup and checkpoint I/O. The receipt is kept on the device. mGBA reports the renderer and frame count. Its profiler does not expose framebuffer pixels. Standalone aggregate scores have a distinct protocol and no frame-time percentiles. The upstream bsnes desktop target lacks a headless fixed-frame interface. Its libretro route remains available.
+
+Carter Circuit v2 adds 64 translucent objects on GBA and four layers with pseudo-hires color math on SNES. Hard must run at least 10% slower than normal in the three-pass workload check on mGBA, Snes9x and bsnes. Run tests/scene_load.py with an emulator ID and core path. Revisions use separate comparison groups. A CartsSNES build that misses a reference checkpoint records a failed scene.

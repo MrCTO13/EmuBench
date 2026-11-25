@@ -21,12 +21,12 @@ function interval(values) {
 function ranking(rows,baseline,challenger) {
   const hashes=new Set(rows.filter(r=>!r.outcome && [baseline,challenger].includes(build(r))).map(r=>r.core_sha256));
   const relevant=rows.filter(r=>hashes.has(r.core_sha256));
-  const groups=group(relevant.filter(r=>r.device_id && /^snes-circuit-(easy|normal|hard)-v1$/.test(r.profile)),r=>device(r)+"|"+r.worker_sha256);
+  const groups=group(relevant.filter(r=>r.device_id && /^snes-circuit-(easy|normal|hard)-v2$/.test(r.profile)),r=>device(r)+"|"+r.worker_sha256);
   const devices=new Map(), matched=[];let complete=0;
   for(const runs of groups.values()){
     const ratios=[], links=[];
     for(const level of ["easy","normal","hard"]){
-      const part=runs.filter(r=>r.profile==="snes-circuit-"+level+"-v1");
+      const part=runs.filter(r=>r.profile==="snes-circuit-"+level+"-v2");
       if(part.some(r=>r.outcome==="failed"))break;
       const a=part.filter(r=>build(r)===baseline), b=part.filter(r=>build(r)===challenger);
       if(!a.length||!b.length||![...a,...b].every(r=>r.speed_x>0))break;

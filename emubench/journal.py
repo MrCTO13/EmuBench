@@ -23,6 +23,7 @@ def database():
              retry_after REAL NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0,
              lease TEXT, lease_until REAL NOT NULL DEFAULT 0, last_error TEXT)""")
         db.execute("CREATE TABLE IF NOT EXISTS score_outbox (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS attempt_metrics(id TEXT PRIMARY KEY, speed REAL, accuracy TEXT, spread REAL)")
         yield db
 
 
@@ -58,6 +59,9 @@ def record_completion(db, result, location, title="Personal ROM"):
     db.execute("""UPDATE attempts SET finished=?,outcome='completed',build=?,result=?,avg=?,low=?,high=?
                   WHERE id=?""", (result["finished_utc"], result["emulator"] + " " + result["version"], str(location),
                   result["average_fps"], result["low_1pct_fps"], result["high_1pct_fps"], result["id"]))
+    from .accuracy import coverage
+    db.execute("INSERT OR REPLACE INTO attempt_metrics VALUES(?,?,?,?)",
+               (result["id"],result.get("speed_x"),coverage(result),result.get("repeatability",{}).get("relative_spread")))
     uploads.enqueue(db, result, title)
 
 
@@ -70,14 +74,16 @@ def history(game, limit):
     if not 1 <= limit <= 10000:
         raise ValueError("Choose a limit from 1 to 10,000")
     with database() as db:
-        rows = db.execute("""SELECT started,finished,game,build,outcome,context,result,reason,avg,low,high FROM attempts
-                          WHERE instr(lower(game),lower(?)) > 0 ORDER BY started DESC,rowid DESC LIMIT ?""", (game, limit))
+        rows = db.execute("""SELECT started,finished,game,build,outcome,context,result,reason,avg,low,high,speed,accuracy,spread FROM attempts LEFT JOIN attempt_metrics USING(id)
+                          WHERE instr(lower(game),lower(?)) > 0 ORDER BY started DESC,attempts.rowid DESC LIMIT ?""", (game, limit))
         count = 0
-        for start, end, name, version, outcome, context, location, error, avg, low, high in rows:
+        for start, end, name, version, outcome, context, location, error, avg, low, high, speed, accuracy, spread in rows:
             count += 1
             print(f"{start} .. {end or '?'}  {name}  {version}  {outcome}  ({context})")
             if avg is not None:
-                print(f"  {avg:.0f} avg / {low:.0f} low / {high:.0f} high FPS")
+                label=f"{speed:.2f}×" if speed is not None else "Unscored"
+                spread_label=f" · spread {spread:.1%}" if spread is not None else ""
+                print(f"  {label} · {accuracy or 'Untested'}{spread_label} · {avg:.0f} avg / {low:.0f} low / {high:.0f} high FPS")
             if location or error:
                 print(" ", location or error)
         if not count:

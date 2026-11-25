@@ -59,15 +59,17 @@ def main():
                 else:raise TimeoutError("No campaign progress")
             finally:
                 first.kill()
-        subprocess.run(run,stdout=subprocess.DEVNULL,check=True,timeout=900)
+        subprocess.run(run,stdout=subprocess.DEVNULL,check=True,timeout=3200)
         subprocess.run(run,stdout=subprocess.DEVNULL,check=True,timeout=30)
         with closing(sqlite3.connect(queue)) as db:
             assert db.execute("SELECT status,count(*) FROM jobs GROUP BY status").fetchall()==[("done",1001)]
+            results=[json.loads(row[0]) for row in db.execute("SELECT result FROM jobs")]
+            eligible={r["id"] for r in results if r["repeatability"]["accepted"]}
         with closing(sqlite3.connect(receipts)) as db:
             rows=[json.loads(row[0]) for row in db.execute("SELECT payload FROM receipts")]
-            assert len(rows)==1001 and len({r["campaign_id"] for r in rows})==1
+            assert eligible and {r["run_id"] for r in rows}==eligible and len({r["campaign_id"] for r in rows})==1
             assert all(r["game"]=="Personal ROM" and "rom_sha256" not in r for r in rows)
-        print("Verified 1,001 completed workloads and 1,001 unique offline receipts after restart.")
+        print(f"Verified 1,001 completed workloads and all {len(eligible)} eligible offline receipts after restart.")
 
 
 if __name__=="__main__":

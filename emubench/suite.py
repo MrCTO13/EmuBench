@@ -12,8 +12,7 @@ def run(args, core, release):
         raise ValueError("Selected core differs from the requested binary digest")
     console="gba" if args.emulator=="mgba" else "snes"
     extra={"chips":chips.run(args.emulator,core)} if console=="snes" else {}
-    if args.checks:
-        extra["accuracy"]=accuracy.run(args.emulator,core)
+    extra["accuracy"]=accuracy.run(args.emulator,core)
     group=str(uuid.uuid4())
     worker=engines.digest(engines.worker())
     if args.expect_worker and args.expect_worker!=worker:
@@ -42,7 +41,7 @@ def run(args, core, release):
                 attest.complete(result)
                 path=scores.save(result,dest)
                 journal.complete(result,path)
-            print(f"{scene.title} · {result['speed_x']:.2f}× · {result['average_fps']} avg / {result['low_1pct_fps']} low / "
+            print(f"{scene.title} · {accuracy.coverage(result)} · {result['speed_x']:.2f}× · {result['average_fps']} avg / {result['low_1pct_fps']} low / "
                   f"{result['high_1pct_fps']} high FPS\nPrivate result: {path}")
         except scores.InterruptedWindow:
             raise

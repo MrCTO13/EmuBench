@@ -13,7 +13,7 @@ function table(headers,rows){const wrap=make("div",null,"wrap"),t=make("table"),
 function go(){location.href=localUrl("/compare?"+new URLSearchParams({q:q.value,emulators:[...checked()].join(",")}));}
 function info(heading,copy){title.textContent=heading;intro.textContent=copy;document.title=heading+" · Emu Bench";}
 function speedLabel(r){return Number.isFinite(r.speed_x)?r.speed_x.toFixed(2)+'×':'Unscored';}
-function list(rows){return table(["Game / scene","Emulator","System","Console speed","Average FPS","1% low","1% high"],rows.map(r=>[link(r.game,"/run/"+r.run_id),r.emulator+" "+(r.version||""),r.cpu+" · "+r.os+(r.execution?" · x64 on ARM64":""),speedLabel(r),r.outcome==="failed"?"Failed · "+r.reason:String(r.average_fps),String(r.low_1pct_fps??"—"),String(r.high_1pct_fps??"—")]));}
+function list(rows){return table(["Game / scene","Emulator","System","Accuracy","Console speed","Average FPS","1% low","1% high"],rows.map(r=>[link(r.game,"/run/"+r.run_id),r.emulator+" "+(r.version||""),r.cpu+" · "+r.os+(r.execution?" · x64 on ARM64":""),conformance(r).label,speedLabel(r),r.outcome==="failed"?"Failed · "+r.reason:String(r.average_fps),String(r.low_1pct_fps??"—"),String(r.high_1pct_fps??"—")]));}
 function empty(message){out.append(make("p",message,"empty"));}
 async function get(path){const res=await fetch(path);if(!res.ok)throw Error(res.status===404?"This score could not be found.":"Scores are temporarily unavailable.");return res.json();}
 const q=make("input"),checks=[],mode=make("select");q.type="search";q.name="q";q.value=params.get("q")||"";q.placeholder="Game or ROM name";
@@ -33,9 +33,9 @@ function filters() {
 async function score() {
   const id=location.pathname.split("/")[2];const r=demo?demoRows().find(row=>row.run_id===id):await get("/api/run/"+id);if(!r)throw Error("Example score not found.");info(r.game,r.emulator+" "+(r.version||"")+" · "+r.cpu+" · "+r.os+" "+r.arch+(r.execution?" · x64 on ARM64":""));
   if(r.outcome==="failed"){out.append(make("p","This scene failed during "+r.reason+". No FPS was scored."),link("View campaign","/campaign/"+r.campaign_id));return;}
-  const cards=make("div",null,"cards");for(const [label,field] of [["Console speed","speed_x"],["Average FPS","average_fps"],["1% low FPS","low_1pct_fps"],["1% high FPS","high_1pct_fps"]]){const el=make("div",label);el.append(make("strong",field==="speed_x"?speedLabel(r):r[field]));cards.append(el);}out.append(cards,make("h2","Frame timing"));
-  const chart=make("div");out.append(chart);drawTiming(chart,r.timing);out.append(make("p","Blue shows average FPS per interval. Orange marks the slowest frame. Hover a point for its frame and time."));
-  const items=[["Repeatability",r.repeatability?"Three passes · "+(100*r.repeatability.relative_spread).toFixed(1)+"% spread":"Unrecorded"],["Host load",r.idle?r.idle.state+" ("+r.idle.cpu_percent+"% CPU before timing)":"Unknown"],["Runner",r.mode||"Legacy libretro"],["Video timing",r.video_mode?r.video_mode.region+" · "+r.video_mode.refresh_hz+" Hz ("+r.video_mode.source+")":"Unrecorded"],["Workload",r.profile],["Rendered frames",r.rendered_frames],["Warm-up frames",r.warmup_frames],["Submitted",new Date(r.received*1000).toISOString()],["Core SHA-256",r.core_sha256],["Worker SHA-256",r.worker_sha256]];
+  const cards=make("div",null,"cards");for(const [label,field] of [["Console speed","speed_x"],["Average FPS","average_fps"],["1% low FPS","low_1pct_fps"],["1% high FPS","high_1pct_fps"]]){const el=make("div",label);el.append(make("strong",field==="speed_x"?speedLabel(r):(r[field]??"Unavailable")));cards.append(el);}out.append(make("p","Accuracy · "+conformance(r).label),cards);if(r.timing)out.append(make("h2","Frame timing"));
+  if(r.timing){const chart=make("div");out.append(chart);drawTiming(chart,r.timing);out.append(make("p","Blue shows average FPS per interval. Orange marks the slowest frame. Hover a point for its frame and time."));}else out.append(make("p","External process time includes startup, software rendering and exit. This runner reports aggregate throughput."));
+  const items=[["Repeatability",r.repeatability?.relative_spread!==undefined?"Three passes · "+(100*r.repeatability.relative_spread).toFixed(1)+"% spread":"Unrecorded"],["Host load",r.idle?r.idle.state+" ("+r.idle.cpu_percent+"% CPU before timing)":"Unknown"],["Runner",r.mode||"Legacy libretro"],["Video timing",r.video_mode?r.video_mode.region+" · "+r.video_mode.refresh_hz+" Hz ("+r.video_mode.source+")":"Unrecorded"],["Workload",r.profile],["Rendered frames",r.rendered_frames],["Warm-up frames",r.warmup_frames],["Submitted",new Date(r.received*1000).toISOString()],["Core SHA-256",r.core_sha256],["Worker SHA-256",r.worker_sha256]];
   if(r.hardware){const h=r.hardware;items.push(["Model",h.model||"Unavailable"],["RAM",Math.round(h.ram_bytes/2**30)+" GiB"],["OS build",h.os_build],["Physical CPU cores",h.physical_cores??"Unavailable"],["Core types",Object.entries(h.core_types).map(([k,v])=>v+" "+k).join(", ")||"Unavailable"],["GPU",h.gpu.join(", ")||"Unavailable"]);}
   for(const [i,w] of (r.conditions||[]).entries()){
     for(const [phase,s] of Object.entries(w)){
@@ -72,13 +72,13 @@ async function browse(){
       const groups=comparison(filtered,mode.value);if(!groups.length)empty("No matched pair for these filters yet.");
       for(const g of groups){
         const bars=make("ul",null,"bars"),sets=group(g,mode.value==="devices"?device:build);
-        const values=[...sets.values()].map(rs=>[mode.value==="devices"?rs[0].cpu+" · "+rs[0].os:build(rs[0]),median(rs.map(r=>r.speed_x))]);
+        const values=[...sets.values()].map(rs=>[mode.value==="devices"?rs[0].cpu+" · "+rs[0].os:build(rs[0]),median(rs.map(r=>r.speed_x)),accuracyGroup(rs)]);
         const max=Math.max(1,...values.map(row=>row[1]));
-        for(const [label,fps] of values.filter(v=>Number.isFinite(v[1]))){const li=make("li",label+" · "+fps.toFixed(2)+"×"),bar=make("meter");bar.max=max;bar.value=fps;bar.setAttribute("aria-label",label);li.append(bar);bars.append(li);}
+        for(const [label,fps,accuracy] of values.filter(v=>Number.isFinite(v[1]))){const li=make("li",label+" · "+fps.toFixed(2)+"× · "+accuracy),bar=make("meter");bar.max=max;bar.value=fps;bar.setAttribute("aria-label",label);li.append(bar);bars.append(li);}
         out.append(make("h2",g[0].game),bars,list(g));
       }
     }else if(route==="rankings"){
-      studyPanel();out.append(make("h2","Community Carter Circuit scores"),make("p","Self-reported runs on matched SNES scenes."));
+      studyPanel();out.append(make("h2","Community Carter Circuit scores"),make("p","Matched SNES scenes require 5/5 CPU, audio and coprocessor checks, idle passes and accepted spread."));
       const builds=[...new Set(filtered.filter(r=>!r.outcome && r.profile.startsWith("snes-circuit-")).map(build))].sort();
       if(builds.length<2){empty("Rankings need two builds with matched SNES scenes. No eligible pair yet.");return;}
       const a=make("select"),b=make("select");for(const v of builds){selectOption(a,v,v);selectOption(b,v,v);}b.selectedIndex=1;
@@ -90,7 +90,7 @@ async function browse(){
       const cohorts=[...group(filtered.filter(r=>r.device_id && !r.outcome),r=>[device(r),workload(r),r.worker_sha256,r.emulator].join("|")).values()].filter(g=>group(g,build).size>1);
       if(!cohorts.length)empty("Version history needs two builds on the same device and scene.");
       for(const g of cohorts){out.append(make("h2",g[0].game+" · "+g[0].emulator));const versions=[...group(g.sort((a,b)=>a.received-b.received),build)];let prev=null;
-        out.append(table(["Build","First submitted (UTC)","Median speed","Raw FPS","Change","Samples"],versions.map(([ver,rs])=>{const fps=median(rs.map(r=>r.average_fps));const change=prev?Math.round(100*(fps/prev-1))+"%":"—";prev=fps;return [link(ver,"/run/"+rs[0].run_id),new Date(rs[0].received*1000).toISOString().slice(0,10),speedLabel({speed_x:median(rs.map(r=>r.speed_x))}),String(Math.round(fps)),change,String(rs.length)];})));}
+        out.append(table(["Build","First submitted (UTC)","Accuracy","Median speed","Raw FPS","Change","Samples"],versions.map(([ver,rs])=>{const fps=median(rs.map(r=>r.average_fps));const change=prev?Math.round(100*(fps/prev-1))+"%":"—";prev=fps;return [link(ver,"/run/"+rs[0].run_id),new Date(rs[0].received*1000).toISOString().slice(0,10),accuracyGroup(rs),speedLabel({speed_x:median(rs.map(r=>r.speed_x))}),String(Math.round(fps)),change,String(rs.length)];})));}
     }else{
       if(filtered.length)out.append(list(filtered));else empty("No published scores match this search.");
       if(cursor){const next=make("button","Load more scores");next.onclick=async()=>{next.disabled=true;try{await more();render();}catch(e){status.textContent=e.message;next.disabled=false;}};out.append(next);}

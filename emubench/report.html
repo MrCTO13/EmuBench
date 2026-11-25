@@ -23,9 +23,9 @@ const snapshot=Array.isArray(embedded);
 const runs=[];
 function speedLabel(r){return Number.isFinite(r.speed_x)?r.speed_x.toFixed(2)+'×':'Unscored'}
 function diagnosticCount(r){
-  if (!r.accuracy) return "Untested";
-  const values=Object.values(r.accuracy.checks);
-  return values.filter(v=>v==="pass").length+" / "+values.length;
+  const values=Object.values({...r.accuracy?.checks,...r.chips});
+  const count=r.profile.startsWith("snes-")?5:r.profile.startsWith("gba-")?3:values.length;
+  return values.length?values.filter(v=>v==="pass").length+"/"+count+" checks passed":"Untested";
 }
 function validAccuracy(r) {
   if (!r.accuracy) return true;
@@ -45,10 +45,10 @@ function show(r) {
   const summary=byId("metrics");summary.replaceChildren();
   for(const [label,key] of [["Console speed","speed_x"],["Average FPS","average_fps"],["1% low FPS","low_1pct_fps"],["1% high FPS","high_1pct_fps"]]){
     const col=document.createElement("div"),name=document.createElement("span"),value=document.createElement("strong");
-    name.textContent=label;value.textContent=key==='speed_x'?speedLabel(r):r[key].toFixed(0);col.append(name,value);summary.append(col);
+    name.textContent=label;value.textContent=key==='speed_x'?speedLabel(r):(r[key]?.toFixed(0)??'Unavailable');col.append(name,value);summary.append(col);
   }
-  byId("diagnostics").hidden=!r.accuracy;
-  if(r.accuracy) byId("diagnostic-results").textContent=diagnosticCount(r)+" diagnostic programs passed · "+r.accuracy.suite+" · "+
+  byId("diagnostics").hidden=false;byId("diagnostic-results").textContent=diagnosticCount(r);
+  if(r.accuracy) byId("diagnostic-results").textContent=diagnosticCount(r)+" · "+r.accuracy.suite+" · "+
       Object.entries(r.accuracy.checks).map(([k,v])=>k+" "+v).join(" · ");
   drawTiming(byId("chart"),r.timing);
   byId("origin").replaceChildren();

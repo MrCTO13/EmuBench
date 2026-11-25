@@ -8,6 +8,31 @@ function requireValue(ok) { if (!ok) throw new Error("Invalid score fields"); }
 const integer = (x, min, max) => Number.isSafeInteger(x) && x >= min && x <= max;
 const plain = (v, len, rx) => typeof v === "string" && v.length > 0 && v.length <= len && rx.test(v);
 const emulators = {mGBA:"gba", Snes9x:"snes", bsnes:"snes", CartsSNES:"snes"};
+function validateHostAndPasses(r,end){
+  requireValue(fields(r.idle,["state","cpu_percent"]) && Number.isFinite(r.idle.cpu_percent)
+    && r.idle.cpu_percent>=0 && r.idle.cpu_percent<=100 && r.idle.state===(r.idle.cpu_percent>=25?"busy":"idle"));
+  const hw=r.hardware, modelName=s=>plain(s,160,/^[^\u0000-\u001f\u007f]+$/u);
+  requireValue(fields(hw,["model","ram_bytes","os_build","physical_cores","core_types","gpu"])
+    && (hw.model===null || modelName(hw.model)) && modelName(hw.os_build) && integer(hw.ram_bytes,1,2**52)
+    && (hw.physical_cores===null || integer(hw.physical_cores,1,65536))
+    && hw.core_types && typeof hw.core_types==="object" && !Array.isArray(hw.core_types)
+    && Object.entries(hw.core_types).every(([k,n])=>plain(k,50,/^[a-zA-Z0-9 -]+$/) && integer(n,1,65536))
+    && Array.isArray(hw.gpu) && hw.gpu.length<=16 && hw.gpu.every(modelName));
+  const sensor=s=>fields(s,["thermal_state","temperature_c","throttled","throttle_count","power_source","low_power"])
+    && [null,"nominal","fair","serious","critical"].includes(s.thermal_state)
+    && [null,"ac","battery"].includes(s.power_source) && [null,true,false].includes(s.low_power)
+    && [null,true,false].includes(s.throttled) && (s.throttle_count===null || integer(s.throttle_count,0,1e15))
+    && (s.temperature_c===null || Number.isFinite(s.temperature_c) && s.temperature_c>=-40 && s.temperature_c<=150);
+  requireValue(Array.isArray(r.conditions) && r.conditions.length===3 && r.conditions.every(w=>fields(w,["before","after"]) && sensor(w.before) && sensor(w.after)));
+  const repeat=r.repeatability;
+  requireValue(fields(repeat,["elapsed_ns","selected","relative_spread","accepted"])
+    && Array.isArray(repeat.elapsed_ns) && repeat.elapsed_ns.length===3 && repeat.elapsed_ns.every(ns=>integer(ns,1,1e15))
+    && integer(repeat.selected,0,2) && repeat.accepted===true);
+  const durations=[...repeat.elapsed_ns].sort((a,b)=>a-b), mid=durations[1];
+  const spread=(1/durations[0]-1/durations[2])*mid;
+  requireValue(repeat.elapsed_ns[repeat.selected]===mid && Math.abs(mid-end*1e6)<1
+    && Number.isFinite(repeat.relative_spread) && Math.abs(spread-repeat.relative_spread)<1e-9 && spread<=0.10);
+}
 export function validate(r) {
   if (r?.outcome==="failed") {
     const profile=Object.hasOwn(PROFILES,r.profile) && PROFILES[r.profile];
@@ -15,6 +40,24 @@ export function validate(r) {
       && profile && r.profile.includes("-circuit-") && r.game===profile.title && Object.hasOwn(emulators,r.emulator) && profile.console===emulators[r.emulator]
       && ["timeout","checkpoint","measurement"].includes(r.reason) && ["Darwin","Linux","Windows"].includes(r.os) && /^(arm64|aarch64|amd64|x86_64)$/i.test(r.arch)
       && [r.device_id,r.campaign_id,r.run_id].every(x=>plain(x,36,UUID)) && [r.core_sha256,r.worker_sha256].every(x=>plain(x,64,SHA)) && plain(r.cpu,160,CPU));
+    return r;
+  }
+  if(r.mode==="standalone-process-v1"){
+    requireValue(fields(r,["run_id","device_id","comparison_id","game","profile","mode","emulator","version","source_commit",
+      "core_sha256","worker_sha256","os","arch","cpu","average_fps","speed_x","warmup_frames","rendered_frames","elapsed_ns",
+      "render_checkpoints","video_mode","hardware","idle","conditions","repeatability"]));
+    requireValue(r.emulator==="DuckStation" && r.profile==="psx-standalone-process-v1" && r.source_commit===null
+      && [r.run_id,r.device_id,r.comparison_id].every(id=>plain(id,36,UUID)) && plain(r.game,90,TEXT)
+      && plain(r.version,100,/^[a-zA-Z0-9 .()+_-]+$/) && plain(r.core_sha256,64,SHA) && plain(r.worker_sha256,64,SHA)
+      && ["Darwin","Windows","Linux"].includes(r.os) && /^(arm64|aarch64|x86_64|amd64)$/i.test(r.arch) && plain(r.cpu,160,CPU)
+      && integer(r.rendered_frames,100,1e6) && r.warmup_frames===0 && integer(r.elapsed_ns,1,1e15) && integer(r.render_checkpoints,2,r.rendered_frames));
+    const hz=r.video_mode?.refresh_hz;
+    const rates=[53693175,53203425].flatMap(c=>[[6825,263],[6825,262.5],[6810,314],[6810,312.5]].map(([line,lines])=>c/(line/2)/lines));
+    requireValue(fields(r.video_mode,["source","region","refresh_hz"]) && r.video_mode.source==="psx-crtc" && rates.some(v=>Math.abs(v-hz)<1e-8)
+      && r.video_mode.region===(hz<55?"PAL":"NTSC") && integer(r.average_fps,0,1e8)
+      && Math.abs(r.average_fps-1e9*r.rendered_frames/r.elapsed_ns)<=0.51 && Number.isFinite(r.speed_x)
+      && Math.abs(r.speed_x-1e9*r.rendered_frames/r.elapsed_ns/hz)<1e-8);
+    validateHostAndPasses(r,r.elapsed_ns/1e6);
     return r;
   }
   requireValue(fields(r,["run_id","game","profile","emulator","version","source_commit","core_sha256","worker_sha256",
@@ -45,29 +88,7 @@ export function validate(r) {
     end=bin.end_ms; frame=bin.worst_frame;
   }
   requireValue(Math.abs(r.average_fps-1000*r.rendered_frames/end)<=1);
-  requireValue(fields(r.idle,["state","cpu_percent"]) && Number.isFinite(r.idle.cpu_percent)
-    && r.idle.cpu_percent>=0 && r.idle.cpu_percent<=100 && r.idle.state===(r.idle.cpu_percent>=25?"busy":"idle"));
-  const hw=r.hardware, modelName=s=>plain(s,160,/^[^\u0000-\u001f\u007f]+$/u);
-  requireValue(fields(hw,["model","ram_bytes","os_build","physical_cores","core_types","gpu"])
-    && (hw.model===null || modelName(hw.model)) && modelName(hw.os_build) && integer(hw.ram_bytes,1,2**52)
-    && (hw.physical_cores===null || integer(hw.physical_cores,1,65536))
-    && hw.core_types && typeof hw.core_types==="object" && !Array.isArray(hw.core_types)
-    && Object.entries(hw.core_types).every(([k,n])=>plain(k,50,/^[a-zA-Z0-9 -]+$/) && integer(n,1,65536))
-    && Array.isArray(hw.gpu) && hw.gpu.length<=16 && hw.gpu.every(modelName));
-  const sensor=s=>fields(s,["thermal_state","temperature_c","throttled","throttle_count","power_source","low_power"])
-    && [null,"nominal","fair","serious","critical"].includes(s.thermal_state)
-    && [null,"ac","battery"].includes(s.power_source) && [null,true,false].includes(s.low_power)
-    && [null,true,false].includes(s.throttled) && (s.throttle_count===null || integer(s.throttle_count,0,1e15))
-    && (s.temperature_c===null || Number.isFinite(s.temperature_c) && s.temperature_c>=-40 && s.temperature_c<=150);
-  requireValue(Array.isArray(r.conditions) && r.conditions.length===3 && r.conditions.every(w=>fields(w,["before","after"]) && sensor(w.before) && sensor(w.after)));
-  const repeat=r.repeatability;
-  requireValue(fields(repeat,["elapsed_ns","selected","relative_spread","accepted"])
-    && Array.isArray(repeat.elapsed_ns) && repeat.elapsed_ns.length===3 && repeat.elapsed_ns.every(ns=>integer(ns,1,1e15))
-    && integer(repeat.selected,0,2) && repeat.accepted===true);
-  const durations=[...repeat.elapsed_ns].sort((a,b)=>a-b), mid=durations[1];
-  const spread=(1/durations[0]-1/durations[2])*mid;
-  requireValue(repeat.elapsed_ns[repeat.selected]===mid && Math.abs(mid-end*1e6)<1
-    && Number.isFinite(repeat.relative_spread) && Math.abs(spread-repeat.relative_spread)<1e-9 && spread<=0.10);
+  validateHostAndPasses(r,end);
   const check=r.frame_check;
   requireValue(fields(check,["method","samples","changes","signature"]) && check.method==="full-fnv64-17"
     && check.samples===Math.ceil(r.rendered_frames/17) && integer(check.changes,1,check.samples-1)
@@ -76,7 +97,9 @@ export function validate(r) {
   requireValue(r.mode==="libretro" && fields(mode,["region","refresh_hz","source"]) && Number.isFinite(mode.refresh_hz)
     && mode.refresh_hz>=20 && mode.refresh_hz<=240 && (handheld?
       mode.region==="handheld" && mode.source==="lcd-clock" && Math.abs(mode.refresh_hz-4194304/70224)<1e-9 :
-      ["NTSC","PAL"].includes(mode.region) && mode.source==="emulator-av")
+      ["NTSC","PAL"].includes(mode.region) && (mode.source==="snes-progressive"?
+        r.profile.startsWith("snes-") && Math.abs(mode.refresh_hz-(mode.region==="NTSC"?60.09881389744051:50.006977968))<1e-9 :
+        mode.source==="emulator-av" && (!r.profile.startsWith("snes-") || Math.abs(mode.refresh_hz-(mode.region==="NTSC"?60:50))<0.5)))
     && Number.isFinite(r.speed_x) && Math.abs(r.speed_x-1000*r.rendered_frames/end/mode.refresh_hz)<1e-6);
   if (r.accuracy) {
     const color=r.profile==="gbc-boot-no-input-v1" && ["Gambatte","SameBoy"].includes(r.emulator);

@@ -4,6 +4,14 @@ function workload(r){return [r.profile,r.edition || (r.profile.includes("-circui
 function build(r){return r.emulator+" "+r.version+" · "+r.core_sha256.slice(0,12);}
 function group(rows,key){const m=new Map();for(const r of rows){const k=key(r);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;}
 function median(values){const v=values.slice().sort((a,b)=>a-b),i=Math.floor(v.length/2);return v.length%2?v[i]:(v[i-1]+v[i])/2;}
+function conformance(r){
+  const consoleId=r.profile.split("-")[0], names=consoleId==="snes"?["65C816 basic","SPC700","SA-1 multiply","Super FX immediate","DSP-1 fixed-point multiply"]:consoleId==="gba"?["ARM","Thumb","Memory"]:consoleId==="gbc"?Object.keys(r.accuracy?.checks||{}):[];
+  const outcomes={...r.accuracy?.checks,...r.chips};
+  if(!names.length || !Object.keys(outcomes).length)return {label:"Untested",passed:false};
+  const count=names.filter(k=>outcomes[k]==="pass").length;
+  return {label:count+"/"+names.length+" checks passed",passed:count===names.length};
+}
+function accuracyGroup(rows){return [...new Set(rows.map(r=>conformance(r).label))].join(", ");}
 function comparison(rows,mode) {
   const ok=rows.filter(r=>!r.outcome && r.device_id && (mode!=="devices" || r.edition || r.profile.includes("-circuit-")));
   const key=r=>workload(r)+"|"+(mode==="devices"?r.emulator+"|"+(r.source_commit && r.build_recipe ? r.source_commit+"|"+r.build_recipe : r.core_sha256):device(r)+"|"+r.worker_sha256);
@@ -27,9 +35,9 @@ function ranking(rows,baseline,challenger) {
     const ratios=[], links=[];
     for(const level of ["easy","normal","hard"]){
       const part=runs.filter(r=>r.profile==="snes-circuit-"+level+"-v2");
-      if(part.some(r=>r.outcome==="failed"))break;
+      if(relevant.some(r=>r.outcome==="failed" && r.profile==="snes-circuit-"+level+"-v2" && r.device_id===runs[0].device_id && r.worker_sha256===runs[0].worker_sha256))break;
       const a=part.filter(r=>build(r)===baseline), b=part.filter(r=>build(r)===challenger);
-      if(!a.length||!b.length||[...a,...b].some(r=>r.idle?.state!=="idle")||![...a,...b].every(r=>r.speed_x>0))break;
+      if(!a.length||!b.length||[...a,...b].some(r=>!conformance(r).passed || r.repeatability?.accepted!==true || r.idle?.state!=="idle")||![...a,...b].every(r=>r.speed_x>0))break;
       ratios.push(median(b.map(r=>r.speed_x))/median(a.map(r=>r.speed_x)));links.push(...a,...b);
     }
     if(ratios.length===3){

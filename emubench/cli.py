@@ -222,7 +222,7 @@ def main(argv=None):
                     path = scores.save(result,dest)
                     journal.complete(result,path)
                 print(f"{scene.title} · {scene.description}\n"
-                      f"{result['speed_x']:.2f}× · {result['average_fps']} avg / {result['low_1pct_fps']} low / {result['high_1pct_fps']} high FPS"
+                      f"{accuracy.coverage(result)} · {result['speed_x']:.2f}× · {result['average_fps']} avg / {result['low_1pct_fps']} low / {result['high_1pct_fps']} high FPS"
                       f"\nPrivate result: {path}")
                 uploads.flush(limit=3)
         elif args.command == "campaign":
@@ -279,6 +279,7 @@ def main(argv=None):
                 path = scores.save(result, args.out)
                 journal.complete(result, path, args.game)
             print(f"{result['emulator']} {result['version']} · {result['rendered_frames']} rendered frames\n"
+                  f"Accuracy      {accuracy.coverage(result)}\n"
                   f"Console speed {result['speed_x']:.2f}× ({result['video_mode']['refresh_hz']:.6f} Hz)\n"
                   f"Three-pass spread {result['repeatability']['relative_spread']:.1%} "
                   f"({'accepted' if result['repeatability']['accepted'] else 'rejected'})\n"

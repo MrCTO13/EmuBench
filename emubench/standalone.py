@@ -4,6 +4,9 @@ import csv
 import io
 import json
 import os
+import platform
+import sys
+import hashlib
 from pathlib import Path
 import re
 import shutil
@@ -15,20 +18,20 @@ from . import conditions, engines, journal, telemetry, hardware
 
 
 @contextmanager
-def slot(name='measure.lock'):
-    directory = engines.home()
-    directory.mkdir(parents=True, exist_ok=True)
-    with (directory / name).open("a+b") as lock:
+def slot(name="measure.lock"):
+    # A loopback socket gives all users and data directories on this host the same
+    # OS-owned exclusion slot. No listener or external network access is needed.
+    import socket
+    from .scores import InterruptedWindow
+    with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as lock:
+        if os.name=="nt":
+            lock.setsockopt(socket.SOL_SOCKET,socket.SO_EXCLUSIVEADDRUSE,1)
+        port=47258 if name=="score-series.lock" else 47257
         try:
-            if os.name == "nt":
-                import msvcrt
-                lock.seek(0)
-                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock.bind(("127.0.0.1",port))
+            lock.listen(1)
         except OSError as exc:
-            raise ValueError("Another measurement is active on this device") from exc
+            raise InterruptedWindow("Another measurement owns the device timing slot") from exc
         yield
 
 
@@ -39,9 +42,10 @@ def timed(command, directory, timeout):
         start = time.perf_counter_ns()
         output = subprocess.run(command, cwd=directory, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout)
         elapsed = time.perf_counter_ns() - start
+        readings = telemetry.window(before)
     if output.returncode or elapsed <= 0:
         raise ValueError("The selected standalone runner did not complete the workload")
-    return output, elapsed, idle, telemetry.window(before)
+    return output, elapsed, idle, readings
 
 
 def receipt(emulator, version, digest, frames, elapsed, hz, checkpoints, idle, conditions_window, content_sha256):
@@ -61,16 +65,31 @@ def run_series(measure, args):
             raise ValueError("Standalone workload changed between passes")
     report = repeats.summarize([r["elapsed_ns"] for r in runs], args.frames)
     data = runs[report["selected"]]
+    from . import attest, scores, uploads
+    console = "psx" if data["emulator"]=="DuckStation" else "gba"
+    data.update(profile=console+"-standalone-process-v1", schema=1, system=platform.system(),
+                arch=platform.machine(), cpu=scores.cpu_model(), core_sha256=data["runner_sha256"],
+                device_id=journal.comparison_id("installation"),comparison_id=journal.comparison_id(data["content_sha256"]))
+    if getattr(sys,"frozen",False):
+        data["worker_sha256"]=engines.digest(Path(sys.executable))
+    else:
+        parts=[Path(__file__),Path(__file__).with_name("duckstation.py"),Path(__file__).with_name("repeats.py")]
+        data["worker_sha256"]=hashlib.sha256(b"".join(p.read_bytes() for p in parts)).hexdigest()
     data["hardware"] = hardware.fingerprint()
     data["conditions"] = [r["conditions"] for r in runs]
     data["repeatability"] = report
     data["idle"] = max((r["idle"] for r in runs),key=lambda i:i["cpu_percent"])
+    attest.complete(data)
     dest = engines.home() / "standalone" / (data["id"]+".json")
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("x", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+    if data["render_checkpoints"] is not None:
+        with journal.database() as db:
+            uploads.enqueue(db,data,"Personal ROM")
+        uploads.flush(limit=3)
     status="accepted" if report["accepted"] else "rejected"
-    print(f"{data['emulator']} standalone · {data['speed_x']:.2f}× · {data['average_fps']} FPS "
+    print(f"{data['emulator']} standalone · {data['speed_x']:.2f}× · {data['average_fps']} FPS · accuracy untested "
           f"· spread {report['relative_spread']:.1%} ({status})\nPrivate report: {dest}")
 
 
@@ -104,3 +123,13 @@ def mgba(args):
         if len(rows)!=1 or rows[0].get("renderer")!="software" or int(rows[0]["frames"])!=args.frames:
             raise ValueError("mGBA did not confirm software rendering for the requested frames")
         return receipt("mGBA",match[1],digest,args.frames,elapsed,4194304/70224,None,idle,window,engines.digest(game))
+
+def public_fields(data,title):
+    from .scores import public_title
+    shared = ("device_id","comparison_id","profile","mode","emulator","version","core_sha256","worker_sha256","arch",
+              "cpu","average_fps","speed_x","idle","repeatability","conditions","hardware","render_checkpoints","elapsed_ns")
+    region = "handheld" if data["emulator"]=="mGBA" else ("PAL" if data["refresh_hz"]<55 else "NTSC")
+    return {**{k:data[k] for k in shared}, **({"attestation":data["attestation"]} if "attestation" in data else {}),
+            "video_mode":{"region":region,"refresh_hz":data["refresh_hz"],"source":"lcd-clock" if region=="handheld" else "psx-crtc"},
+            "os":data["system"], "run_id":data["id"],"source_commit":None,"game":public_title(title),
+            "warmup_frames":0,"rendered_frames":data["frames"]}

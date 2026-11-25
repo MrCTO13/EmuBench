@@ -50,6 +50,6 @@ async function signedRun(req,key) {
   // Generous screening ceilings. The signed CPU class is still self-reported.
   const constrained=/cortex-a(?:35|53|55)|intel.*atom/i.test(r.cpu);
   const ceiling=constrained?30000:200000;
-  if(!r.outcome)requireValue(r.average_fps<=ceiling && r.high_1pct_fps<=4*ceiling);
+  if(!r.outcome)requireValue(r.average_fps<=ceiling && (r.high_1pct_fps??r.average_fps)<=4*ceiling);
   return {...r,proof:{key,record:e.record,seal:e.seal,signature:e.signature}};
 }

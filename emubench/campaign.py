@@ -153,6 +153,10 @@ def create(args):
     if args.circuit:
         plan["worker_sha256"]=engines.digest(engines.worker())
         plan["chips"]={peer:chips.run(peer,Path(build["path"])) for peer,build in cores.items() if peer!="mgba" and "path" in build}
+    if args.circuit or args.study:
+        plan["panels"]={peer:accuracy.run(peer,Path(build["path"])) for peer,build in cores.items() if peer in adapters.SUITE_PEERS and "path" in build}
+        if args.study and args.study=="snes":
+            plan["chips"]={peer:chips.run(peer,Path(build["path"])) for peer,build in cores.items() if peer in ("snes9x","bsnes","cartssnes") and "path" in build}
     if args.carter:
         plan["accuracy"] = accuracy.run(emulator, Path(cores[emulator]["path"]))
     dest = args.queue.expanduser().resolve()
@@ -287,6 +291,10 @@ def resume(db, path, plan):
                                                 circuit.FRAMES if public_scene else carter.FRAMES if scene else plan["frames"], plan["timeout"],
                                                 lambda: time.time() < deadline and ready(), workload["sha256"],
                                                 emulator, scene=scene, member=workload.get("member"))
+                        if emulator in plan.get('panels',{}):
+                            result['accuracy']=plan['panels'][emulator]
+                        if emulator in plan.get('chips',{}):
+                            result['chips']=plan['chips'][emulator]
                         if public_scene:
                             if result["worker_sha256"] != plan["worker_sha256"]:
                                 raise ValueError("Circuit worker changed since the campaign was created")

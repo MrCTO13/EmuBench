@@ -125,3 +125,14 @@ def summary(record):
     checks = record["checks"]
     count = sum(value == "pass" for value in checks.values())
     return f"{count}/{len(checks)} diagnostic programs passed · " + ", ".join(f"{name} {value}" for name,value in checks.items())
+
+def coverage(result):
+    from . import chips, color_checks
+    console = result.get("profile","").split("-")[0]
+    expected = list(CHECKS.get(console, ())) if console!="gbc" else list(color_checks.CHECKS)
+    if console=="snes":
+        expected.extend(chips.NAMES)
+    outcomes = {**result.get("accuracy",{}).get("checks",{}), **result.get("chips",{})}
+    if not expected or not outcomes:
+        return "Untested"
+    return f"{sum(outcomes.get(k)=='pass' for k in expected)}/{len(expected)} checks passed"

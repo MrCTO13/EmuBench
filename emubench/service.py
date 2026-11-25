@@ -24,6 +24,10 @@ def post(path,data,headers):
         return json.loads(resp.read(2048))
 
 def publish(public):
+    if public.get("repeatability",{}).get("accepted") is False:
+        raise ValueError("Three-pass spread exceeds 10%")
+    if public.get("mode")=="standalone-process-v1" and not public.get("render_checkpoints"):
+        raise ValueError("The standalone runner lacks framebuffer checkpoints")
     key,bearer=attest.identity()
     if not public.get("attestation") or public.get("device_id")!=attest.device(key):
         raise ValueError("A new signed measurement from this installation is required")

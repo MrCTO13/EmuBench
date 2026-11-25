@@ -66,8 +66,9 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
     engines.home().mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
            "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
+    from .standalone import slot
     # File handles avoid pipe back-pressure while the parent watches idle state.
-    with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryFile() as source, \
+    with slot(), tempfile.TemporaryDirectory() as folder, tempfile.TemporaryFile() as source, \
          tempfile.TemporaryFile() as errors:
         root = Path(folder)
         env.pop("EMUBENCH_STAGED",None)
@@ -265,6 +266,12 @@ def reference_mode(console, mode):
         raise ValueError("Emulator did not report a usable console refresh rate")
     if console in ("gb", "gbc", "gba"):
         return {"region":"handheld", "refresh_hz":4194304 / 70224, "source":"lcd-clock"}
+    if console=="snes":
+        # Progressive display modes from upstream Snes9x snes9x.h. Cores can
+        # round their return value differently for the same physical mode.
+        ref={"NTSC":60.09881389744051,"PAL":50.006977968}[mode["region"]]
+        if abs(rate-ref)<0.03:
+            return {"region":mode["region"],"refresh_hz":ref,"source":"snes-progressive"}
     return {"region":mode["region"], "refresh_hz":rate, "source":"emulator-av"}
 
 
@@ -280,6 +287,9 @@ def public_title(title):
 
 
 def public_fields(result, title):
+    if result.get('mode')=='standalone-process-v1':
+        from . import standalone
+        return standalone.public_fields(result,title)
     from .accuracy import validated
     official = circuit.PROFILES.get(result["profile"])
     scene = official or carter.PROFILES.get(result["profile"])

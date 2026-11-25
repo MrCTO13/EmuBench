@@ -1,34 +1,52 @@
 # Emu Bench
 
-Presented by Carts. A local-first command-line benchmark for macOS, Windows and Linux. The first profile measures rendered mGBA Game Boy Advance frames from boot with neutral input.
+Presented by Carts. A local-first command-line benchmark for macOS, Windows and Linux. It measures rendered frames from boot with neutral input for mGBA (Game Boy Advance) and Snes9x and bsnes (Super NES).
 
 ## Quick start
 
 Download the matching archive from [Releases](https://github.com/MrCTO13/EmuBench/releases) and extract it. On macOS and Linux, run `chmod +x emubench` if your archive utility drops the executable bit. Use `./emubench` on macOS or Linux and `.\emubench.exe` in Windows PowerShell. The examples assume the executable is on your PATH.
 
 ```sh
-emubench versions mgba
-emubench install mgba --version latest
-emubench run --rom "My Game.gba" --version latest --out my-run.json
+emubench emulators
+emubench download --all
+emubench run --rom "My Game.gba" --latest-core --out my-run.json
 emubench publish my-run.json --game "My Game" --preview
 emubench publish my-run.json --game "My Game"
 ```
 
-The managed installer downloads the official tagged mGBA source and builds it locally. Install Git, CMake and a C/C++ toolchain first. Use Xcode Command Line Tools on macOS, Visual Studio Build Tools with Desktop development with C++ on Windows, or a C/C++ build toolchain on Linux. Each release is cached independently. A numeric version works offline after installation. The default reference is 0.10.5. To use the release CLI with an existing core and skip compilation, run `emubench run --core "/path/to/mgba_libretro.dylib" --rom "My Game.gba"`. Use a matching-architecture libretro library (.dll on Windows, .so on Linux). The desktop GUI executable uses a different interface.
+The release CLI can run all three supported measurement cores without a compiler. Download commands contact upstream directly and keep packages under your per-user downloads directory. The complete shortlist currently has 18 emulator projects. Automatic selection prefers a matching upstream desktop package and otherwise fetches the current Libretro Buildbot core. Use `download snes9x --channel core` to fetch the timing library explicitly. DuckStation offers a desktop download only. Each entry prints the package kind, build and local path. Keep that core path to repeat an exact build offline with `--core`. Desktop downloads are saved for manual installation. Check the upstream project's OS requirements when opening a desktop app.
+
+    emubench download --all --list-only
+    emubench download mgba --channel desktop --version 0.10.5
+    emubench download --all --target windows-x64
+
+The downloader checks transport length, validates the advertised package format and checks upstream SHA-256 when supplied. A core must match the published CRC and the selected native architecture. Content-addressed cache entries and local receipts preserve the acquired package. Upstream rebuilds can change what “latest” resolves to.
+
+The optional `install mgba --version latest` command downloads the official tagged mGBA source and builds it locally. Install Git, CMake and a C/C++ toolchain first. Use Xcode Command Line Tools on macOS, Visual Studio Build Tools with Desktop development with C++ on Windows, or a C/C++ build toolchain on Linux. Each release is cached independently. A numeric version works offline after installation. The default reference is 0.10.5. To use the release CLI with an existing core and skip compilation, run `emubench run --core "/path/to/mgba_libretro.dylib" --rom "My Game.gba"`. Use a matching-architecture libretro library (.dll on Windows, .so on Linux). The desktop GUI executable uses a different interface.
 
 From a source checkout with Python 3.10 or later, substitute `python -m emubench` for the executable. Source mode builds the measurement worker with CMake on first use. Set `EMUBENCH_HOME` to choose a private installation and results directory.
 
 ## Measurement
 
-The default window is 120 warm-up frames followed by 1,800 measured frames. Change either with `--warmup-frames` or `--frames`. These are engineering defaults pending a duration and repeatability study. The native worker times software rendering with a monotonic host clock. It supplies neutral input, disables frame skipping, BIOS loading and idle-loop removal, and accepts audio without waiting for playback. For each timed advance it requires one non-null 240 × 160 video buffer, samples eight pixel locations, and records an elapsed interval. The checks establish frame delivery. Game accuracy requires an independent reference trace.
+The default window is 120 warm-up frames followed by 1,800 measured frames. Change either with `--warmup-frames` or `--frames`. These are engineering defaults pending a duration and repeatability study. The native worker times software rendering with a monotonic host clock. It supplies neutral input and accepts audio without waiting for playback. The mGBA profile disables frame skipping, BIOS loading and idle-loop removal. The SNES profile uses each core's native software renderer and bundled defaults. bsnes run-ahead is disabled. Each timed advance must produce one non-null software framebuffer of the console's expected dimensions. The worker samples eight pixel locations and records an elapsed interval. The checks establish frame delivery. Game accuracy requires an independent reference trace.
 
 Average FPS is the frame count divided by the total elapsed seconds. The 1% low is the reciprocal of the nearest-rank 99th-percentile frame time. The 1% high uses the 1st percentile. Both are expressed in FPS. Boot, attract screens and gameplay can have very different costs. Compare identical ROM revisions, frame windows, core binaries and hardware when drawing conclusions.
 
 ## Sharing
 
-A run saves a private JSON trace with frame times and ROM and build hashes. `publish --preview` shows exactly which fields may leave the machine. Publishing uses the GitHub CLI (`gh auth login`) to create a public, self-reported score in this repository under the submitting account. The optional display title defaults to “Personal GBA ROM”. The public record omits the ROM, its filename, its hash, local paths and raw frame times. Publication requires interactive confirmation or explicit `--yes`. [Browse submitted scores](https://github.com/MrCTO13/EmuBench/issues?q=is%3Aissue%20in%3Atitle%20%22Score%22).
+A run saves a private JSON trace with frame times and ROM and build hashes. `publish --preview` shows exactly which fields may leave the machine. Publishing uses the GitHub CLI (`gh auth login`) to create a public, self-reported score in this repository under the submitting account. The optional display title defaults to “Personal ROM”. The public record omits the ROM, its filename, its hash, local paths and raw frame times. Publication requires interactive confirmation or explicit `--yes`. [Browse submitted scores](https://github.com/MrCTO13/EmuBench/issues?q=is%3Aissue%20in%3Atitle%20%22Score%22).
 
-Desktop CI builds the native CLI and runs a freshly generated GBA program on each OS. This checks the measurement path. Reference-suite and commercial-game rankings require separate workloads and validation.
+A random comparison token is assigned per exact ROM in the local device journal. Sharing it allows readers to link runs of that image from the same journal. Keep one journal per physical device. Published runs remain self-reported.
+
+## Compare SNES emulators
+
+    emubench run --rom "My Game.sfc" --emulator snes9x --latest-core --out snes9x.json
+    emubench run --rom "My Game.sfc" --emulator bsnes --latest-core --out bsnes.json
+    emubench compare snes9x.json bsnes.json --out comparison.html
+
+Open the report, check the emulators to display, and use the FPS trace link to inspect dips. The same comparison view is available in the downloadable scores.html for published runs. It matches cartridge/device tokens, OS, architecture, processor, workload profile, worker hash, warm-up and measured frames. It displays every matching repeat separately. Reports created before v0.2 remain individually readable. SNES co-processor games that need external firmware require additional support. Commercial performance claims require representative gameplay and repeatability validation.
+
+Desktop CI builds the native CLI and runs freshly generated GBA and SNES programs on each OS. This checks the measurement path. Reference-suite and commercial-game rankings require separate workloads and validation.
 
 ## Device history and FPS dips
 

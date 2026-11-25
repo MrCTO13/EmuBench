@@ -62,7 +62,7 @@ function renderCompared() {
     cell.append(link); row.append(cell); compareBody.append(row);
   }
   compareMessage.textContent = !entries.length ? (status || "No matched runs for this search. Older submissions can be viewed individually.") :
-    !selected.size ? "Select an emulator to compare." : compareBody.children.length + " individual run(s) shown.";
+    !selected.size ? "Select an emulator to compare." : compareBody.children.length + (compareBody.children.length === 1 ? " individual run shown." : " individual runs shown.");
 }
 compareQuery.addEventListener("input",fillGroups);
 compareBy.addEventListener("change",fillPeers);

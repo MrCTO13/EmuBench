@@ -32,6 +32,10 @@ def template_html():
 def write_report(result, public, destination):
     data = {**public, "game": result.get("local_name", "Personal ROM"),
             "when": result.get("started_utc", ""), "finished": result.get("finished_utc", "")}
+    return write_embedded(data, destination)
+
+
+def write_embedded(data, destination):
     template = template_html()
     # Embedded JSON is data, including any locally supplied filename.
     safe_json = json.dumps(data, ensure_ascii=True).replace("<", r"\u003c").replace(">", r"\u003e")

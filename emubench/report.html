@@ -18,9 +18,13 @@
 </main><script type="application/json" id="run-data"></script><script>/* CHART_JS */</script><script>
 const byId=id=>document.getElementById(id);
 const local=byId("run-data").textContent.trim();
+const embedded=local?JSON.parse(local):null;
+const snapshot=Array.isArray(embedded);
 const runs=[];
 function show(r) {
-  byId("compare").hidden=true; byId("board").hidden=true; byId("detail").hidden=false; byId("back").hidden=Boolean(local);
+  byId("compare").hidden=true; byId("board").hidden=true; byId("detail").hidden=false; byId("back").hidden=Boolean(local)&&!snapshot;
+  byId("back").href=snapshot?"#compare":"#";
+  byId("back").textContent=snapshot?"Back to comparison":"All published runs";
   byId("context").textContent=local?"Private device report":"Community submission";
   byId("game").textContent=r.game;
   byId("build").textContent=r.emulator+" "+r.version+" · "+r.os+" "+r.arch+(r.cpu?" · "+r.cpu:"")+" · "+r.warmup_frames+" warm-up frames · "+r.rendered_frames+" measured frames";
@@ -32,7 +36,7 @@ function show(r) {
   }
   drawTiming(byId("chart"),r.timing);
   byId("origin").replaceChildren();
-  if(r.number){const a=document.createElement("a");a.href="https://github.com/MrCTO13/EmuBench/issues/"+r.number;a.textContent="View submitted score on GitHub";byId("origin").append(a)}
+  if(r.number&&!snapshot){const a=document.createElement("a");a.href="https://github.com/MrCTO13/EmuBench/issues/"+r.number;a.textContent="View submitted score on GitHub";byId("origin").append(a)}
 }
 function key(s){return s.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\.(gba|sfc|smc)$/,"").replace(/[^\p{L}\p{N}]+/gu," ").trim()}
 function render() {
@@ -43,7 +47,7 @@ function render() {
 }
 let status="Loading published runs…";
 function route(){const r=runs.find(item=>location.hash==="#run-"+item.number);if(r){show(r);return}
-  const comparing=location.hash==="#compare";byId("compare").hidden=!comparing;byId("board").hidden=comparing;byId("detail").hidden=true;
+  const comparing=location.hash==="#compare"||(snapshot&&!location.hash);byId("compare").hidden=!comparing;byId("board").hidden=comparing;byId("detail").hidden=true;
   if(comparing){fillGroups();return}
   const n=render();byId("feedback").textContent=status||(n?n+" matching runs.":"No published runs match this search.")}
 function parse(issue){
@@ -64,5 +68,13 @@ async function load(){
   }catch{status="GitHub scores are unavailable right now. Refresh to retry."}route();
 }
 /* COMPARE_JS */
-if(local){show(JSON.parse(local))}else{byId("query").oninput=route;window.onhashchange=route;route();load()}
+compareQuery.value=new URLSearchParams(location.search).get("q")||"";
+if(snapshot){
+  embedded.forEach((r,i)=>runs.push({...r,number:i+1}));
+  byId("compare").querySelector("a").href="#all";
+  byId("compare").querySelector("a").textContent="All runs in this report";
+  byId("board").querySelector("h1").textContent="Saved runs";
+  byId("board").querySelector("p").firstChild.textContent="Results from the selected files. ";
+  status="";byId("query").oninput=route;window.onhashchange=route;route();
+}else if(local){show(embedded)}else{byId("query").oninput=route;window.onhashchange=route;route();load()}
 </script></body></html>

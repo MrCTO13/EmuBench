@@ -11,3 +11,5 @@ dist/
 *.bios
 *.spec
 results/
+*.sfc
+*.smc

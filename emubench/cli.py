@@ -51,6 +51,10 @@ def main(argv=None):
     report = commands.add_parser("details", help="Write an offline interactive FPS chart")
     report.add_argument("result", type=Path)
     report.add_argument("--out", required=True, type=Path)
+    compare = commands.add_parser("compare", help="Write an offline comparison of saved local runs")
+    compare.add_argument("results", nargs="+", type=Path)
+    compare.add_argument("--game", help="Display title for this comparison")
+    compare.add_argument("--out", type=Path, required=True)
     campaign.arguments(commands)
     args = parser.parse_args(argv)
     try:
@@ -69,6 +73,17 @@ def main(argv=None):
             trace = json.loads(args.result.read_text(encoding="utf-8"))
             public = scores.public_fields(trace, "Personal ROM")
             print(details.write_report(trace, public, args.out))
+        elif args.command == "compare":
+            records = {}
+            for source in args.results:
+                trace = json.loads(source.read_text(encoding="utf-8"))
+                entry = scores.public_fields(trace, args.game or "Personal ROM")
+                if not entry.get("comparison_id"):
+                    raise ValueError("This result predates matched runs. Use details to view it individually.")
+                if not args.game:
+                    entry["game"] = trace.get("local_name", "Personal ROM")
+                records[entry["run_id"]] = entry
+            print(details.write_embedded(list(records.values()), args.out))
         elif args.command == "versions":
             if args.emulator == "mgba":
                 print("\n".join(engines.releases()))

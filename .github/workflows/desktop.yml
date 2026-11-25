@@ -56,6 +56,13 @@ jobs:
             ./dist/emubench publish "$RUNNER_TEMP/$emulator.json" --preview
           done
           python -c "import json,os,pathlib; root=pathlib.Path(os.environ['RUNNER_TEMP']); a,b=[json.loads((root/(k+'.json')).read_text()) for k in ('snes9x','bsnes')]; assert all(r['rendered_frames']==300 and r['sampled_frame_changes']>200 for r in (a,b)); assert a['comparison_id']==b['comparison_id'] and a['worker_sha256']==b['worker_sha256'] and a['profile']==b['profile'] and a['core_sha256']!=b['core_sha256']"
+          ./dist/emubench compare "$RUNNER_TEMP/snes9x.json" "$RUNNER_TEMP/bsnes.json" --out "$RUNNER_TEMP/comparison.html"
+      - name: Check packaged score and comparison views in Chrome
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser-qa" playwright-core@1.56.1 --no-audit --no-fund
+          NODE_PATH="$RUNNER_TEMP/browser-qa/node_modules" node tests/test_viewer.cjs
       - name: Assemble distribution
         shell: bash
         run: |

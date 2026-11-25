@@ -34,7 +34,18 @@ Average FPS is the frame count divided by the total elapsed seconds. The 1% low 
 
 ## Sharing
 
-A run saves a private JSON trace with frame times and ROM and build hashes. `publish --preview` shows exactly which fields may leave the machine. Publishing uses the GitHub CLI (`gh auth login`) to create a public, self-reported score in this repository under the submitting account. The optional display title defaults to “Personal ROM”. The public record omits the ROM, its filename, its hash, local paths and raw frame times. Publication requires interactive confirmation or explicit `--yes`. [Browse submitted scores](https://github.com/MrCTO13/EmuBench/issues?q=is%3Aissue%20in%3Atitle%20%22Score%22).
+To upload new scores automatically from this device, sign in to GitHub once and enable uploads:
+
+    gh auth login --hostname github.com
+    emubench uploads enable
+    emubench run --rom "/path/to/My Game.gba" --latest-core --game "My Game"
+    emubench uploads status
+
+Single runs, Carter scenes and campaign jobs save locally first. When uploads are enabled, each completed result queues a public summary for the existing GitHub scoreboard under your signed-in account. Carter scenes use their official titles. Personal runs use the public title you enter with `--game` or “Personal ROM”. Local filenames, cartridge data, ROM hashes, directories, raw frame timings and device logs stay on the machine. The public summary includes the emulator build, OS, CPU, whole-number FPS, a grouped timing curve and any diagnostic outcomes.
+
+Offline runs keep measuring. Later runs and campaign iterations retry queued summaries with a delay after failures. Run `emubench uploads sync` to retry immediately, including after the last run of a campaign. The CLI must be running to send pending scores. `emubench uploads disable` stops new uploads and drops pending summaries. A request already in flight may finish. Previously completed private runs require a separate manual submission. Each score carries a run ID for reconciling retries.
+
+A run saves a private JSON trace with frame times and ROM and build hashes. `publish --preview` shows exactly which fields may leave the machine. Publishing uses the GitHub CLI (`gh auth login`) to create a public, self-reported score in this repository under the submitting account. The optional display title defaults to “Personal ROM”. The public record omits the ROM, its filename, its hash, local paths and raw frame times. Manual publication requires interactive confirmation or explicit `--yes`. [Browse submitted scores](https://github.com/MrCTO13/EmuBench/issues?q=is%3Aissue%20in%3Atitle%20%22Score%22).
 
 A random comparison token is assigned per exact ROM in the local device journal. Sharing it allows readers to link runs of that image from the same journal. Keep one journal per physical device. Published runs remain self-reported.
 
@@ -75,7 +86,7 @@ To resume after login on the test Mac, put the extracted CLI in its permanent lo
     emubench campaign launch-agent nightly.sqlite --out "$HOME/Library/LaunchAgents/org.emubench.nightly.plist"
     launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/org.emubench.nightly.plist"
 
-On Windows, Task Scheduler can invoke the same “campaign resume” command at logon. On Linux it can run as a user service. Campaigns never publish automatically.
+On Windows, Task Scheduler can invoke the same “campaign resume” command at logon. On Linux it can run as a user service. Campaigns use the device's automatic upload setting.
 
 ## Carter FPS and accuracy checks
 

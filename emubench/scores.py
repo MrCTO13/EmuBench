@@ -1,5 +1,6 @@
 """Private frame traces and an explicit allowlist for public score submissions."""
 from contextlib import closing
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -185,6 +186,13 @@ def save(result, destination):
     return destination
 
 
+def public_title(title):
+    if not isinstance(title, str) or not 1 <= len(title.strip()) <= 90 or any(
+            not (c.isalnum() or c in " .,'’()+&!_-") for c in title):
+        raise ValueError("Use a public game title of 1–90 letters, numbers, spaces or common punctuation")
+    return title.strip()
+
+
 def public_fields(result, title):
     from .accuracy import validated
     scene = carter.PROFILES.get(result["profile"])
@@ -197,9 +205,7 @@ def public_fields(result, title):
         title = scene.title
     if result["schema"] != 1 or not allowed:
         raise ValueError("Unknown result format")
-    if not isinstance(title, str) or not 1 <= len(title.strip()) <= 90 or any(
-            not (c.isalnum() or c in " .,'’()+&!_-") for c in title):
-        raise ValueError("Use a public game title of 1–90 letters, numbers, spaces or common punctuation")
+    title = public_title(title)
     if (result["system"] not in ("Darwin", "Linux", "Windows") or
         not re.fullmatch(r"[A-Za-z0-9_-]{1,24}", result["arch"]) or
         not re.fullmatch(r"[A-Za-z0-9 ._+-]{1,80}", result["version"]) or
@@ -224,28 +230,51 @@ def public_fields(result, title):
         cohort["scene_description"] = scene.description
     if "comparison_id" in result:
         cohort["comparison_id"] = str(uuid.UUID(result["comparison_id"]))
-    return {**cohort, "run_id": str(uuid.UUID(result["id"])), "game": title.strip(), "profile": result["profile"],
+    return {**cohort, "run_id": str(uuid.UUID(result["id"])), "game": title, "profile": result["profile"],
             "emulator": result["emulator"], "version": result["version"], "source_commit": result["source_commit"],
             "core_sha256": result["core_sha256"], "worker_sha256": result["worker_sha256"],
             "os": result["system"], "arch": result["arch"], "cpu": cpu, "warmup_frames": result["warmup_frames"],
             "rendered_frames": n, **stats(result["frame_ns"]), "timing": details.timeline(result["frame_ns"])}
 
 
+def find_submission(run_id, since, gh):
+    # Search covers older manually shared scores. The issues list also covers a
+    # successful POST that lost its response before GitHub Search indexed it.
+    prefix = f"[Score {run_id}]"
+    query = f'repo:{REPOSITORY} is:issue in:title "{run_id}"'
+    found = json.loads(subprocess.check_output([*gh, "--method", "GET", "search/issues", "-f", "q=" + query], timeout=30))
+    items = found["items"]
+    page = 0
+    while True:
+        match = next((item["html_url"] for item in items if item["title"].startswith(prefix)), None)
+        if match or (page and len(items) < 100):
+            return match
+        page += 1
+        items = json.loads(subprocess.check_output([*gh, "--method", "GET", f"repos/{REPOSITORY}/issues",
+                            "-f", "state=all", "-f", "since=" + since, "-F", "per_page=100", "-F", f"page={page}"], timeout=30))
+
+
 def publish(public):
     directory = engines.home()
     directory.mkdir(parents=True, exist_ok=True)
+    gh = ["gh", "api", "--hostname", "github.com"]
     with closing(sqlite3.connect(directory / "published.sqlite", timeout=60)) as db, db:
         db.execute("CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, url TEXT NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS submissions (id TEXT PRIMARY KEY, since TEXT NOT NULL)")
         db.execute("BEGIN IMMEDIATE")
         seen = db.execute("SELECT url FROM receipts WHERE id=?", (public["run_id"],)).fetchone()
         if seen:
             return seen[0]
-        # Match the run ID if a previous request reached GitHub before local commit.
+        since = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        db.execute("INSERT OR IGNORE INTO submissions VALUES (?,?)", (public["run_id"], since))
+        db.commit()  # Keep the recovery window even if the process stops during the POST.
+        db.execute("BEGIN IMMEDIATE")
+        seen = db.execute("SELECT url FROM receipts WHERE id=?", (public["run_id"],)).fetchone()
+        if seen:
+            return seen[0]
+        since = db.execute("SELECT since FROM submissions WHERE id=?", (public["run_id"],)).fetchone()[0]
         prefix = f"[Score {public['run_id']}]"
-        query = f'repo:{REPOSITORY} is:issue in:title "{public["run_id"]}"'
-        found = json.loads(subprocess.check_output(["gh", "api", "--method", "GET", "search/issues",
-                                                    "-f", "q=" + query], timeout=40))
-        url = next((item["html_url"] for item in found["items"] if item["title"].startswith(prefix)), None)
+        url = find_submission(public["run_id"], since, gh)
         if not url:
             kind = "Carter FPS suite" if public["profile"] in carter.PROFILES else "Personal ROM"
             body = (f"{kind} · self-reported · {public['profile']}\n\n"
@@ -253,11 +282,12 @@ def publish(public):
                     f"| {public['average_fps']:.0f} | {public['low_1pct_fps']:.0f} | {public['high_1pct_fps']:.0f} |\n\n"
                     + "\x60\x60\x60json\n" + json.dumps(public, ensure_ascii=False, indent=2) + "\n\x60\x60\x60")
             payload = {"title": f"{prefix} {public['game']} · {public['emulator']} {public['version']}", "body": body}
-            response = subprocess.run(["gh", "api", "--method", "POST", f"repos/{REPOSITORY}/issues",
+            response = subprocess.run([*gh, "--method", "POST", f"repos/{REPOSITORY}/issues",
                                        "--input", "-"], input=json.dumps(payload).encode(), check=True,
                                       stdout=subprocess.PIPE, timeout=40)
             url = json.loads(response.stdout)["html_url"]
         if not re.fullmatch(r"https://github\.com/MrCTO13/EmuBench/issues/[1-9][0-9]*", url, re.I):
             raise ValueError("Unexpected score URL from GitHub")
         db.execute("INSERT INTO receipts VALUES (?, ?)", (public["run_id"], url))
+        db.execute("DELETE FROM submissions WHERE id=?", (public["run_id"],))
     return url

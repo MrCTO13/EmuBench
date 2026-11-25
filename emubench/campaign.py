@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from . import accuracy, carter, downloads, engines, journal, scores
+from . import accuracy, carter, downloads, engines, journal, scores, uploads
 
 
 def arguments(commands):
@@ -199,10 +199,16 @@ def resume(db, path, plan):
                             raise ValueError("Core changed during campaign")
                         result["source_commit"] = plan["commit"]
                         result.update(id=run_id, local_name=scene.title if scene else Path(rom).name, started_utc=started, finished_utc=journal.now())
-                        db.execute("UPDATE jobs SET status='done',result=?,error=NULL WHERE id=?",
-                                   (json.dumps(result, separators=(",", ":")), job_id))
-                        db.commit()
-                        journal.complete(result, f"{path} (export job {job_id})")
+                        # The job, journal and pending upload must survive a restart together.
+                        # Attach only after measurement, which uses its own device journal connection.
+                        db.execute("ATTACH DATABASE ? AS device", (str(engines.home() / "history.sqlite"),))
+                        try:
+                            with db:
+                                db.execute("UPDATE jobs SET status='done',result=?,error=NULL WHERE id=?",
+                                           (json.dumps(result, separators=(",", ":")), job_id))
+                                journal.record_completion(db, result, f"{path} (export job {job_id})")
+                        finally:
+                            db.execute("DETACH DATABASE device")
                     message = f"saved job {job_id}"
                 except scores.InterruptedWindow as exc:
                     message, wait = str(exc), 10
@@ -217,6 +223,7 @@ def resume(db, path, plan):
         if message != last_message:
             print(message, flush=True)
             last_message = message
+        uploads.flush(limit=3)
         if finished:
             return
         if wait:
@@ -241,7 +248,7 @@ def execute(args):
                     "ProgramArguments": [*command, "campaign", "resume", str(path)], "RunAtLoad": True,
                     "KeepAlive": {"SuccessfulExit": False}, "ThrottleInterval": 60,
                     "WorkingDirectory": str(Path(__file__).resolve().parent.parent) if not getattr(sys, "frozen", False) else str(path.parent),
-                    "EnvironmentVariables": {"EMUBENCH_HOME": str(engines.home())}}
+                    "EnvironmentVariables": {"EMUBENCH_HOME": str(engines.home()), "PATH": os.environ.get("PATH", os.defpath)}}
             args.out.parent.mkdir(parents=True, exist_ok=True)
             with args.out.open("xb") as f:
                 plistlib.dump(spec, f)

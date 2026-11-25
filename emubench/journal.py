@@ -18,6 +18,11 @@ def database():
         db.execute("""CREATE TABLE IF NOT EXISTS attempts
             (id TEXT PRIMARY KEY, game TEXT, build TEXT, started TEXT, finished TEXT,
              outcome TEXT, context TEXT, result TEXT, reason TEXT, avg REAL, low REAL, high REAL)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS upload_settings
+            (id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL DEFAULT 0,
+             retry_after REAL NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0,
+             lease TEXT, lease_until REAL NOT NULL DEFAULT 0, last_error TEXT)""")
+        db.execute("CREATE TABLE IF NOT EXISTS score_outbox (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
         yield db
 
 
@@ -45,11 +50,17 @@ def attempt(rom, build, context="single run"):
         raise
 
 
-def complete(result, location):
+def record_completion(db, result, location, title="Personal ROM"):
+    from . import uploads
+    db.execute("""UPDATE attempts SET finished=?,outcome='completed',build=?,result=?,avg=?,low=?,high=?
+                  WHERE id=?""", (result["finished_utc"], result["emulator"] + " " + result["version"], str(location),
+                  result["average_fps"], result["low_1pct_fps"], result["high_1pct_fps"], result["id"]))
+    uploads.enqueue(db, result, title)
+
+
+def complete(result, location, title="Personal ROM"):
     with database() as db:
-        db.execute("""UPDATE attempts SET finished=?,outcome='completed',build=?,result=?,avg=?,low=?,high=?
-                      WHERE id=?""", (result["finished_utc"], result["emulator"] + " " + result["version"], str(location),
-                      result["average_fps"], result["low_1pct_fps"], result["high_1pct_fps"], result["id"]))
+        record_completion(db, result, location, title)
 
 
 def history(game, limit):

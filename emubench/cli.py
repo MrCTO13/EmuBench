@@ -5,7 +5,7 @@ import sqlite3
 import subprocess
 import sys
 
-from . import accuracy, campaign, carter, details, downloads, engines, journal, scores
+from . import accuracy, campaign, carter, details, downloads, engines, journal, scores, uploads
 from .catalog import CATALOG, TARGETS, host_target
 from http.client import HTTPException
 from zipfile import BadZipFile
@@ -13,7 +13,7 @@ from zipfile import BadZipFile
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="emubench", description="Emu Bench presented by Carts")
-    parser.add_argument("--version", action="version", version="Emu Bench 0.3.0")
+    parser.add_argument("--version", action="version", version="Emu Bench 0.4.0")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("emulators", help="List supported emulator downloads")
     dl = commands.add_parser("download", help="Fetch and verify the latest upstream packages")
@@ -31,6 +31,8 @@ def main(argv=None):
     install.add_argument("--version", default=None, metavar="TAG|latest")
     run = commands.add_parser("run", help="Measure a local GBA or SNES ROM")
     run.add_argument("--rom", type=Path, help="Unpacked .gba, .sfc or .smc file (prompt if omitted)")
+    run.add_argument("--game", type=scores.public_title, default="Personal ROM",
+                     help="Display title for automatic uploads when enabled")
     run.add_argument("--emulator", choices=tuple(scores.ADAPTERS), default="mgba")
     build = run.add_mutually_exclusive_group()
     build.add_argument("--version", "--emulator-version", metavar="TAG|latest")
@@ -45,6 +47,9 @@ def main(argv=None):
     publish.add_argument("--game", default="Personal ROM", help="Optional public display title")
     publish.add_argument("--preview", action="store_true", help="Print the public fields and exit offline")
     publish.add_argument("--yes", action="store_true", help="Approve public submission without a prompt")
+    sharing = commands.add_parser("uploads", help="Manage automatic uploads of public score summaries on this device")
+    sharing.add_argument("action", choices=["enable", "disable", "status", "sync"],
+                         help="Enable uploads of future scores to the public GitHub scoreboard, disable and discard pending uploads, show status, or retry pending scores")
     hist = commands.add_parser("history", help="Show this device's private run log")
     hist.add_argument("--game", default="")
     hist.add_argument("--limit", type=int, default=20)
@@ -74,6 +79,13 @@ def main(argv=None):
             for key, item in CATALOG.items():
                 providers = (["desktop"] if item.assets else []) + (["core"] if item.core else [])
                 print(f"{key:<20} {item.name:<19} {', '.join(providers)}")
+        elif args.command == "uploads":
+            if args.action in ("enable", "disable"):
+                uploads.configure(args.action == "enable")
+            if args.action == "sync" and not uploads.flush(force=True):
+                uploads.status()
+                return 1
+            uploads.status()
         elif args.command == "download":
             return downloads.batch(CATALOG if args.all else [args.emulator], args.target or host_target(),
                                    args.channel, args.version, args.list_only)
@@ -114,6 +126,7 @@ def main(argv=None):
                 print(f"{scene.title} · {scene.description}\n"
                       f"{result['average_fps']} avg / {result['low_1pct_fps']} low / {result['high_1pct_fps']} high FPS"
                       f"\nPrivate result: {path}")
+                uploads.flush(limit=3)
         elif args.command == "campaign":
             campaign.execute(args)
         elif args.command == "history":
@@ -156,11 +169,12 @@ def main(argv=None):
                                         args.frames, args.timeout, emulator=args.emulator)
                 result.update(id=run_id, local_name=rom.name, started_utc=start, finished_utc=journal.now())
                 path = scores.save(result, args.out)
-                journal.complete(result, path)
+                journal.complete(result, path, args.game)
             print(f"{result['emulator']} {result['version']} · {result['rendered_frames']} rendered frames\n"
                   f"Average FPS   {result['average_fps']:.0f}\n"
                   f"1% low FPS    {result['low_1pct_fps']:.0f}\n"
                   f"1% high FPS   {result['high_1pct_fps']:.0f}\nPrivate result: {path}")
+            uploads.flush(limit=3)
         else:
             public = scores.public_fields(json.loads(args.result.read_text(encoding="utf-8")), args.game)
             print(json.dumps(public, indent=2, ensure_ascii=False), flush=True)

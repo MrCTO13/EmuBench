@@ -32,7 +32,7 @@ class Scores(unittest.TestCase):
         public = scores.public_fields(self.trace, "A game")
         url = "https://github.com/MrCTO13/EmuBench/issues/13"
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, EMUBENCH_HOME=folder), \
-             patch("subprocess.check_output", return_value=b'{"items":[]}'), \
+             patch("subprocess.check_output", side_effect=[b'{"items":[]}', b'[]']), \
              patch("subprocess.run", return_value=CompletedProcess([], 0, json.dumps({"html_url":url}).encode())) as post:
             self.assertEqual(scores.publish(public), url)
             self.assertEqual(scores.publish(public), url)

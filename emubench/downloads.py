@@ -95,9 +95,12 @@ def release(repo, requested):
 
 
 @lru_cache(maxsize=4)
-def core_index(target):
+def core_index(target, refresh=None):
     path, _ = TARGETS[target]
-    raw = fetch_bytes(f"{BUILD_SERVER}/{path}/latest/.index-extended", 2*1024**2)
+    url = f"{BUILD_SERVER}/{path}/latest/.index-extended"
+    if refresh is not None:
+        url += f"?refresh={refresh}"
+    raw = fetch_bytes(url, 2*1024**2)
     entries = {}
     for line in raw.decode().splitlines():
         fields = line.split()
@@ -106,7 +109,7 @@ def core_index(target):
     return entries
 
 
-def resolve(key, target, channel="auto", version="latest"):
+def resolve(key, target, channel="auto", version="latest", index_refresh=None):
     item = CATALOG[key]
     if not re.fullmatch(r"[A-Za-z0-9][\w.+-]{0,79}", version):
         raise ValueError("Invalid release tag")
@@ -133,7 +136,7 @@ def resolve(key, target, channel="auto", version="latest"):
     path, ext = TARGETS[target]
     member = f"{item.core}_libretro.{ext}"
     name = member + ".zip"
-    info = core_index(target).get(name)
+    info = core_index(target, index_refresh).get(name)
     if not info:
         raise ValueError(f"{name} is absent from the current {target} build index")
     date, crc = info
@@ -201,7 +204,10 @@ def prepare_file(spec, archive, stage):
 def transfer(spec, path):
     digest = sha256()
     length = 0
-    with engines.open_upstream(Request(spec.url, headers={"User-Agent": "EmuBench/0.2"})) as response, path.open("wb") as f:
+    url = spec.url
+    if spec.member and spec.checksum.startswith("crc32:"):
+        url += "?crc32=" + spec.checksum.removeprefix("crc32:")
+    with engines.open_upstream(Request(url, headers={"User-Agent": "EmuBench/0.3"})) as response, path.open("wb") as f:
         if not response.url.startswith("https://"):
             raise ValueError("Insecure upstream redirect")
         header = response.headers.get("Content-Length")
@@ -255,9 +261,10 @@ def obtain(spec):
 
 
 def get(key, target, channel="auto", version="latest", plan=False):
+    index_refresh = None
     for attempt in range(3):
         try:
-            spec = resolve(key, target, channel, version)
+            spec = resolve(key, target, channel, version, index_refresh)
             if plan:
                 return spec, None
             path, _ = obtain(spec)
@@ -271,6 +278,8 @@ def get(key, target, channel="auto", version="latest", plan=False):
             if attempt == 2 or not (transient or rotate):
                 raise
             core_index.cache_clear()
+            if rotate:
+                index_refresh = time.time_ns()
             time.sleep(1 + attempt)
 
 

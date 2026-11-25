@@ -64,6 +64,28 @@ class Downloads(unittest.TestCase):
         self.assertEqual(paths[0].read_bytes(), self.binary)
         self.assertEqual(len(list(self.root.rglob("*.json"))), 1)
 
+    def test_rollover_reloads_stale_index_and_checks_new_core(self):
+        actual = f"{crc32(self.binary):08x}"
+        urls = []
+
+        def upstream(request):
+            url = request.full_url
+            urls.append(url)
+            if ".index-extended" in url:
+                crc = actual if "?refresh=" in url else "00000000"
+                return self.response(f"2026-11-24 {crc} {self.member}.zip\n".encode())
+            return self.response(self.zip)
+
+        dl.core_index.cache_clear()
+        self.addCleanup(dl.core_index.cache_clear)
+        with patch.object(dl.engines, "open_upstream", side_effect=upstream), patch.object(dl.time, "sleep"):
+            spec, path = dl.get("mgba", "linux-x64", "core")
+        self.assertEqual(spec.checksum, "crc32:" + actual)
+        self.assertEqual(path.read_bytes(), self.binary)
+        self.assertEqual(len(urls), 4)
+        self.assertTrue(urls[-1].endswith("?crc32=" + actual))
+        self.assertEqual(len(list(self.root.rglob("*.json"))), 1)
+
     def test_invalid_core_never_promoted(self):
         for spec, payload in [(self.spec, zipped([("../"+self.member, self.binary)])),
                               (replace(self.spec, checksum="crc32:00000000"), self.zip),

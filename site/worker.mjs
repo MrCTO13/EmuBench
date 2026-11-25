@@ -19,7 +19,7 @@ export function validate(r) {
   }
   requireValue(fields(r,["run_id","game","profile","emulator","version","source_commit","core_sha256","worker_sha256",
     "os","arch","cpu","warmup_frames","rendered_frames","average_fps","low_1pct_fps","high_1pct_fps","timing",
-    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips"]));
+    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe"]));
   requireValue(Object.hasOwn(emulators,r.emulator) && plain(r.run_id,36,UUID) && plain(r.game,90,TEXT));
   requireValue(["Darwin","Linux","Windows"].includes(r.os) && /^(arm64|aarch64|amd64|x86_64)$/i.test(r.arch));
   requireValue(plain(r.cpu,160,CPU) && plain(r.version,80,/^[a-zA-Z0-9 ._+-]+$/) && SHA.test(r.core_sha256)
@@ -51,6 +51,7 @@ export function validate(r) {
       && r.accuracy.core_sha256===r.core_sha256 && r.accuracy.worker_sha256===r.worker_sha256
       && fields(r.accuracy.checks,names) && names.every(k=>["pass","fail","unresolved"].includes(r.accuracy.checks[k])));
   }
+  if ("build_recipe" in r) requireValue(r.build_recipe==="mgba-libretro-cmake-v1" && r.emulator==="mGBA" && r.source_commit);
   if ("edition" in r) requireValue(plain(r.edition,64,SHA));
   if ("paced" in r) requireValue(fields(r.paced,["frames","missed_deadlines","audio_underrun_frames","refresh_hz","sample_rate"])
     && integer(r.paced.frames,100,1e6) && integer(r.paced.missed_deadlines,0,r.paced.frames)
@@ -108,7 +109,7 @@ export default {async fetch(request,env) {
     return row?json({...JSON.parse(row.payload),received:row.received}):json({error:"Score not found"},404);
   }
   if(path==="/client.js")return new Response(CLIENT,{headers:{"content-type":"text/javascript; charset=utf-8"}});
-  if(path==="/"||["/compare","/rankings","/history","/method"].includes(path)||/^\/(run|campaign)\/[a-f0-9-]{36}$/.test(path))
+  if(path==="/"||["/compare","/rankings","/history","/library","/method"].includes(path)||/^\/(run|campaign)\/[a-f0-9-]{36}$/.test(path))
     return new Response(PAGE,{headers:{"content-type":"text/html; charset=utf-8","content-security-policy":"default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'","referrer-policy":"no-referrer"}});
   return json({error:"Page not found"},404);
 }};

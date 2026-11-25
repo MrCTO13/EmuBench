@@ -265,6 +265,8 @@ def resume(db, path, plan):
                         if plan.get("campaign_id"):
                             result["campaign_id"] = plan["campaign_id"]
                         result["source_commit"] = build["commit"]
+                        if emulator=="mgba" and build["tag"] and build["commit"]:
+                            result["build_recipe"]="mgba-libretro-cmake-v1"
                         result.update(id=run_id, local_name=scene.title if scene else local_name, started_utc=started, finished_utc=journal.now())
                         # The job, journal and pending upload must survive a restart together.
                         # Attach only after measurement, which uses its own device journal connection.

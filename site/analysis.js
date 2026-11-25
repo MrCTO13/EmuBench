@@ -6,7 +6,7 @@ function group(rows,key){const m=new Map();for(const r of rows){const k=key(r);i
 function median(values){const v=values.slice().sort((a,b)=>a-b),i=Math.floor(v.length/2);return v.length%2?v[i]:(v[i-1]+v[i])/2;}
 function comparison(rows,mode) {
   const ok=rows.filter(r=>!r.outcome && r.device_id && (mode!=="devices" || r.edition || r.profile.includes("-circuit-")));
-  const key=r=>workload(r)+"|"+(mode==="devices"?r.emulator+"|"+(r.source_commit||r.core_sha256):device(r)+"|"+r.worker_sha256);
+  const key=r=>workload(r)+"|"+(mode==="devices"?r.emulator+"|"+(r.source_commit && r.build_recipe ? r.source_commit+"|"+r.build_recipe : r.core_sha256):device(r)+"|"+r.worker_sha256);
   const variants=r=>mode==="devices"?device(r):build(r);
   return [...group(ok,key).values()].filter(g=>group(g,variants).size>=2);
 }

@@ -5,13 +5,14 @@ import json
 import os
 from pathlib import Path
 import secrets
+import platform
 import subprocess
 import sys
 import threading
 import uuid
 import webbrowser
 
-from . import catalog, engines, journal, library, scores
+from . import catalog, engines, journal, library, scores, uploads
 
 
 def invocation():
@@ -20,7 +21,7 @@ def invocation():
 
 def job(body):
     emulator, mode = body["emulator"], body["mode"]
-    if emulator not in scores.ADAPTERS or mode not in ("suite","folder"):
+    if emulator not in scores.ADAPTERS or mode not in ("suite","folder","rom"):
         raise ValueError("Unknown workload or emulator")
     source = []
     if body.get("core"):
@@ -28,12 +29,24 @@ def job(body):
         if not path.is_file():
             raise ValueError("Choose a core library file")
         source = ["--core",str(path)]
+    elif body.get("version"):
+        if emulator != "mgba":
+            raise ValueError("Choose a local library for a specific SNES version")
+        version=body["version"]
+        if version!="latest" and not engines.TAG.fullmatch(version):
+            raise ValueError("Choose a numbered mGBA release or latest")
+        source=["--version",version]
     elif emulator == "cartssnes":
         raise ValueError("Choose your CartsSNES core library")
     elif emulator == "mgba" and catalog.host_target() == "windows-arm64":
         source = ["--version",engines.REFERENCE]
+    if mode=="rom":
+        rom=Path(body["rom"]).expanduser().resolve(strict=True)
+        scores.validate_file(rom,emulator)
+        return [["run","--emulator",emulator,"--rom",str(rom),*source,
+                 *(["--paced"] if body.get("paced") else []),*(["--share-title"] if body.get("share") else [])]]
     if mode == "suite":
-        return [["suite","--emulator",emulator,*source]]
+        return [["suite","--emulator",emulator,*source,*(["--paced"] if body.get("paced") else [])]]
     directory = Path(body["folder"]).expanduser().resolve(strict=True)
     if not body["folder"].strip() or not directory.is_dir():
         raise ValueError("Choose a ROM folder")
@@ -41,7 +54,7 @@ def job(body):
     policy = [] if sys.platform == "darwin" and not body.get("reserved") else ["--dedicated"]
     if sys.platform != "darwin" and not body.get("reserved"):
         raise ValueError("Reserve this computer for the campaign, or supply an idle check in the CLI")
-    return [["campaign","create",str(queue),"--rom-dir",str(directory),"--emulator",emulator,*source,*policy],
+    return [["campaign","create",str(queue),"--rom-dir",str(directory),"--emulator",emulator,*source,*policy,*(["--share-title"] if body.get("share") else [])],
             ["campaign","resume",str(queue)]]
 
 
@@ -50,6 +63,8 @@ def estimate(body):
     peer=body["emulator"]
     if body["mode"]=="suite":
         count,frames=3,720
+    elif body["mode"]=="rom":
+        count,frames=1,1920
     else:
         items=library.discover([Path(body["folder"]).expanduser().resolve()],peer)
         count,frames=len(items),1920
@@ -67,6 +82,15 @@ def launch(open_browser=True):
     secret = secrets.token_urlsafe(32)
     lock = threading.Lock()
     state = {"active":False,"lines":[]}
+    def metadata():
+        root=engines.home()
+        paths=set()
+        for folder in (root/"engines",root/"downloads"):
+            if folder.exists():
+                paths.update(p for p in folder.rglob("*libretro"+engines.LIB[platform.system()]) if p.is_file())
+        ref=engines.bundled_reference()
+        if ref: paths.add(ref[0])
+        return {"cores":[str(p) for p in sorted(paths)],"uploads":uploads.enabled()}
     def run(commands):
         try:
             for args in commands:
@@ -94,10 +118,12 @@ def launch(open_browser=True):
             self.end_headers()
             self.wfile.write(data)
         def valid(self):
-            return self.headers.get("Host")==authority and self.path in ("/"+secret, "/"+secret+"/state","/"+secret+"/estimate")
+            return self.headers.get("Host")==authority and self.path in ("/"+secret, "/"+secret+"/state","/"+secret+"/estimate","/"+secret+"/settings")
         def do_GET(self):
             if not self.valid():
                 return self.send_error(404)
+            if self.path.endswith("/settings"):
+                return self.send_body(200,json.dumps(metadata()).encode(),"application/json")
             if self.path.endswith("/state"):
                 with lock:
                     body=json.dumps(state).encode()
@@ -112,6 +138,11 @@ def launch(open_browser=True):
                 if not 0 < length < 8192:
                     raise ValueError("Invalid request size")
                 body=json.loads(self.rfile.read(length))
+                if self.path.endswith("/settings"):
+                    if type(body.get("enable")) is not bool:
+                        raise ValueError("Expected upload preference")
+                    uploads.configure(body["enable"],"service")
+                    return self.send_body(200,b"Upload preference saved","text/plain")
                 if self.path.endswith("/estimate"):
                     return self.send_body(200,estimate(body).encode(),"text/plain; charset=utf-8")
                 commands=job(body)

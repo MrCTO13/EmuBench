@@ -34,6 +34,7 @@ def run(args, core, release):
                     if result["core_sha256"]!=release["sha256"] or result["version"]!=release["tag"]:
                         raise ValueError("Measured core differs from the requested release")
                     result["source_commit"]=release["commit"]
+                    result["build_recipe"]="mgba-libretro-cmake-v1"
                 result.update(extra)
                 if args.paced:
                     result["paced"]=scores.paced_pass(result,core,rom,120)

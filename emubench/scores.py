@@ -161,7 +161,7 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     if tag and version != tag:
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
     times = list(map(int, output[5:]))
-    return {**scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
+    return {**({"build_recipe":"mgba-libretro-cmake-v1"} if tag else {}), **scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
             "comparison_id": journal.comparison_id(rom_hash), "device_id": journal.comparison_id("installation"),
             "emulator": name, "version": version, "source_commit": commit,
             "core_sha256": core_hash, "worker_sha256": engines.digest(worker),
@@ -250,6 +250,10 @@ def public_fields(result, title):
     if not isinstance(cpu, str) or not 1 <= len(cpu) <= 160 or not cpu.isprintable():
         raise ValueError("Invalid processor model")
     cohort = {"edition":edition["edition"]} if edition else {}
+    if "build_recipe" in result:
+        if result["build_recipe"]!="mgba-libretro-cmake-v1" or result["emulator"]!="mGBA" or not result["source_commit"]:
+            raise ValueError("Invalid source build recipe")
+        cohort["build_recipe"]=result["build_recipe"]
     if "accuracy" in result:
         cohort["accuracy"] = validated(result["accuracy"], "gba" if result["emulator"] == "mGBA" else "snes",
                                        result["core_sha256"], result["worker_sha256"])

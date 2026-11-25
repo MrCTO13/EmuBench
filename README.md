@@ -145,3 +145,11 @@ The CLI also runs a versioned set of named upstream diagnostic programs with the
 - SNES uses the basic 65C816 instruction and SPC700 instruction ROMs from [gilyon/snes-tests v1.4](https://github.com/gilyon/snes-tests/releases/tag/v1.4). Graphics timing and enhancement chips such as Super FX are outside this diagnostic set.
 
 Each saved Carter trace includes its scene, checkpoint digests and per-program outcomes. Use the existing compare, details, history and opt-in publish commands. Easy, normal and hard have different profile IDs so their results appear in separate comparison groups. The FPS command runs all three scenes by default. A campaign accepts the same named scene set with --carter.
+
+## Game-library study design
+
+Freeze the catalog revision, ROM editions, peer builds, viewport, region, audio settings, deterministic routes and failure criteria before timing. Use the same routes on each peer. Keep cold-boot throughput, routed gameplay, paced delivery and conformance in separate tables. A 50 Hz and a 60 Hz edition can have different workloads. Record region and frame count and compare matched editions. Report average and tail FPS as whole numbers.
+
+For a console-wide gameplay claim, define the population and deduplicate regional revisions according to a published rule. Stratify ordinary titles by mapper or hardware family. List rare enhancement hardware ahead of time and include those cases deliberately. Draw randomly within strata with a published seed. Estimate the number of titles from the variability of paired log performance ratios in the pilot and a declared precision target. A fixed number of popular games alone cannot estimate the full library. Weight each stratum by its population for a library-wide estimate. A census removes title sampling uncertainty but still needs representative scenes, repeated-device checks and explicit coverage for failures. Report the fraction of eligible titles that completed and publish per-title rows alongside the estimate. The Carter synthetic score has its own fixed equal-scene weighting.
+
+The live game coverage page lists candidate commercial titles and emulator projects per console. Current measurement adapters cover GBA and SNES. Other downloaded emulator packages need a validated timing adapter before they can produce scores.

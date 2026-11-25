@@ -14,6 +14,7 @@ class Emulator:
 
 MAC = ("macos-arm64", "macos-x64")
 WIN, LINUX = "windows-x64", "linux-x64"
+WIN_ARM, LINUX_ARM = "windows-arm64", "linux-arm64"
 TARGETS = {
     "macos-arm64": ("apple/osx/arm64", "dylib"),
     "macos-x64": ("apple/osx/x86_64", "dylib"),
@@ -42,12 +43,15 @@ CATALOG = {
     "gambatte": Emulator("Gambatte", "gambatte"),
     "mgba": Emulator("mGBA", "mgba", "mgba-emu/mgba", {
         **mac(r"mgba-[\w.]+-macos\.dmg"), WIN: r"mgba-[\w.]+-win64\.7z",
+        LINUX_ARM: r"mgba-[\w.]+-appimage-arm64\.appimage",
         LINUX: r"mgba-[\w.]+-appimage-x64\.appimage"}),
     "gpsp": Emulator("gpSP", "gpsp"),
     "gearsystem": Emulator("Gearsystem", "gearsystem", "drhelius/Gearsystem", {
         MAC[0]: r"gearsystem-[\w.]+-desktop-macos-arm64\.zip",
         MAC[1]: r"gearsystem-[\w.]+-desktop-macos-intel\.zip",
         WIN: r"gearsystem-[\w.]+-desktop-windows-x64\.zip",
+        WIN_ARM: r"gearsystem-[\w.]+-desktop-windows-arm64\.zip",
+        LINUX_ARM: r"gearsystem-[\w.]+-desktop-ubuntu24\.04-arm64\.zip",
         LINUX: r"gearsystem-[\w.]+-desktop-ubuntu24\.04-x64\.zip"}),
     "genesis-plus-gx": Emulator("Genesis Plus GX", "genesis_plus_gx"),
     "picodrive": Emulator("PicoDrive", "picodrive"),
@@ -58,10 +62,11 @@ CATALOG = {
     "beetle-supergrafx": Emulator("Beetle SuperGrafx", "mednafen_supergrafx"),
     "duckstation": Emulator("DuckStation", None, "stenzek/duckstation", {
         **mac(r"duckstation-mac-release\.zip"), WIN: r"duckstation-windows-x64-release\.zip",
+        WIN_ARM: r"duckstation-windows-arm64-release\.zip", LINUX_ARM: r"duckstation-arm64\.appimage",
         LINUX: r"duckstation-x64\.appimage"}),
     "pcsx-rearmed": Emulator("PCSX-ReARMed", "pcsx_rearmed"),
     "finalburn-neo": Emulator("FinalBurn Neo", "fbneo", "finalburnneo/FBNeo", {
-        WIN: r"windows-x86_64\.zip", LINUX: r"linux-sdl2-x86_64\.zip"}),
+        WIN: r"windows-x86_64\.zip", WIN_ARM: r"windows-arm64\.zip", LINUX: r"linux-sdl2-x86_64\.zip"}),
     "mame": Emulator("MAME", "mame", "mamedev/mame", {WIN: r"mame\d+b_x64\.exe"}),
 }
 

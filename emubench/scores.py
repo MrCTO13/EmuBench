@@ -145,8 +145,11 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
         tag, commit = meta["tag"], meta["commit"]
     core_hash = engines.digest(core)
     worker = engines.worker()
+    worker_hash = engines.digest(worker)
     output, checkpoints = run_worker(worker, core, data, warmup, frames, timeout, ready, name,
                                      scene.playback if scene else None)
+    if core_hash != engines.digest(core) or worker_hash != engines.digest(worker):
+        raise ValueError("Core or timing worker changed during measurement")
     scene_evidence = {}
     if not scene:
         edition = identify.match("gba" if emulator == "mgba" else "snes", data)
@@ -164,7 +167,7 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     return {**({"build_recipe":"mgba-libretro-cmake-v1"} if tag else {}), **scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
             "comparison_id": journal.comparison_id(rom_hash), "device_id": journal.comparison_id("installation"),
             "emulator": name, "version": version, "source_commit": commit,
-            "core_sha256": core_hash, "worker_sha256": engines.digest(worker),
+            "core_sha256": core_hash, "worker_sha256": worker_hash,
             "rom_sha256": rom_hash,
             "system": platform.system(), "arch": platform.machine(), "cpu": cpu_model(),
             "warmup_frames": warmup, "frames": frames, "rendered_frames": len(times),

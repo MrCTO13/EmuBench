@@ -30,7 +30,7 @@ function studyPanel() {
         [all.find(g=>g.edition===row.edition).title,row.emulator,row.accuracy_label||'Untested',speedLabel(row),row.average_fps,row.low_1pct_fps,row.high_1pct_fps])));
     }
     const details=make("details");details.append(make("summary","See the 24 selected games"),table(["Cartridge-size quartile","Edition"],s.groups.flatMap((g,i)=>g.games.map(game=>[i+1,game.title]))));panel.append(details);
-    panel.append(link("Sample and review protocol","https://github.com/MrCTO13/EmuBench/blob/main/STUDIES.md"));
+    panel.append(link("Sample and review protocol","https://github.com/MrCTO13/EmuBench/blob/d9289f7c1625a920b7dad006d5b06fd3769ed036/STUDIES.md"));
   }
   select.onchange=render;render();
 }

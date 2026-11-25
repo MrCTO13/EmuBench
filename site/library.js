@@ -25,7 +25,7 @@ function libraryPage(){
     const editions=CARTER_GAMES.filter(g=>filter.value==="all"||systems[g.console]===filter.value);
     if(editions.length){
       const h=make("h2","Carter collection");h.id="carter";
-      out.append(h,link("Download the 12-game pack","https://github.com/MrCTO13/EmuBench/releases/download/carter-games-v1/EmuBench-Carter-Games-v1.zip"),
+      out.append(h,make("p","Two editions include recorded gameplay. Local ROM runs begin at boot. A stationary title screen can leave a run unscored."),link("Download the 12-game pack","https://github.com/MrCTO13/EmuBench/releases/download/carter-games-v1/EmuBench-Carter-Games-v1.zip"),
         table(["Game","Console","Edition","Benchmark mode"],editions.map(g=>[
           g.console==="n64"?g.title:link(g.title,"/?q="+encodeURIComponent(g.title)),systems[g.console],g.edition,
           g.console==="n64"?"Game only": ["Cartervania","Super Carter Bros. 3"].includes(g.title)?"Gameplay replay":"Local ROM"]),"Carter game editions"));

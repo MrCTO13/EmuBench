@@ -86,6 +86,9 @@ jobs:
         run: |
           python -c "import subprocess,sys; from emubench import engines; subprocess.run([sys.executable,'tests/frame_motion.py',engines.install(engines.REFERENCE)[0]],check=True)"
           python tests/public_asset.py
+      - name: Verify macOS source fallback on the native architecture
+        if: startsWith(matrix.platform, 'macos-')
+        run: python -c "from emubench import catalog,snes_build; import subprocess; core,meta=snes_build.install('bsnes',target=catalog.host_target()); subprocess.run(['./dist/emubench','suite','--emulator','bsnes','--core',str(core),'--scene','hard'],check=True)"
       - name: Measure matched SNES runs using native cores
         shell: bash
         run: |

@@ -5,7 +5,7 @@ import sqlite3
 import subprocess
 import sys
 
-from . import accuracy, campaign, carter, details, downloads, engines, journal, scores, uploads
+from . import accuracy, campaign, carter, circuit, details, downloads, engines, journal, scores, uploads
 from .catalog import CATALOG, TARGETS, host_target
 from http.client import HTTPException
 from zipfile import BadZipFile
@@ -64,10 +64,14 @@ def main(argv=None):
     suites.add_argument("--rom", type=Path, help="Pinned original cartridge, or fetch with authenticated gh")
     suites.add_argument("--scene", choices=("all","easy","normal","hard"), default="all")
     suites.add_argument("--out-dir", type=Path, help="Private directory for per-scene trace files")
+    official = commands.add_parser("suite", help="Build and run the public Carter Circuit workload")
+    official.add_argument("--scene", choices=("all", *circuit.LEVELS), default="all")
+    official.add_argument("--out-dir", type=Path)
+    official.add_argument("--expect-core", metavar="SHA256", help="Require an exact emulator binary")
     diag = commands.add_parser("accuracy", help="Run the named upstream CPU/memory conformance programs")
     diag.add_argument("--out", type=Path, help="Write the diagnostic results as JSON")
     diag.add_argument("--refresh", action="store_true", help="Re-run even if this build has a cached result")
-    for command in (suites, diag):
+    for command in (suites, official, diag):
         command.add_argument("--emulator", choices=tuple(scores.ADAPTERS), required=True)
         source = command.add_mutually_exclusive_group()
         source.add_argument("--core", type=Path, help="Pinned local core. By default fetch the latest prebuilt core.")
@@ -89,7 +93,7 @@ def main(argv=None):
         elif args.command == "download":
             return downloads.batch(CATALOG if args.all else [args.emulator], args.target or host_target(),
                                    args.channel, args.version, args.list_only)
-        elif args.command in ("carter","accuracy"):
+        elif args.command in ("carter","suite","accuracy"):
             release = None
             if args.version:
                 if args.emulator != "mgba":
@@ -100,6 +104,28 @@ def main(argv=None):
             console = "gba" if args.emulator == "mgba" else "snes"
             if args.command == "carter":
                 rom = carter.cartridge(console, args.rom)
+            if args.command == "suite":
+                if args.expect_core and engines.digest(core) != args.expect_core:
+                    raise ValueError("Selected core differs from the requested binary digest")
+                for scene in circuit.SCENES:
+                    if scene.console != console or args.scene not in ("all", scene.level):
+                        continue
+                    rom = circuit.cartridge(console, scene.level)
+                    with journal.attempt(rom, core.name, scene.title) as (run_id, start):
+                        result = scores.measure(rom, None, core, scene.warmup, circuit.FRAMES, 120,
+                                                expected_rom=scene.digest, emulator=args.emulator, scene=scene)
+                        if release:
+                            if result["core_sha256"] != release["sha256"] or result["version"] != release["tag"]:
+                                raise ValueError("Measured core differs from the requested release")
+                            result["source_commit"] = release["commit"]
+                        result.update(id=run_id, started_utc=start, finished_utc=journal.now(), local_name=scene.title)
+                        dest = args.out_dir / (scene.profile + "-" + run_id + ".json") if args.out_dir else None
+                        path = scores.save(result, dest)
+                        journal.complete(result, path)
+                    print(f"{scene.title} · {result['average_fps']} avg / {result['low_1pct_fps']} low / "
+                          f"{result['high_1pct_fps']} high FPS\nPrivate result: {path}")
+                    uploads.flush(limit=3)
+                return 0
             record = accuracy.run(args.emulator, core, getattr(args,"refresh",False))
             print(accuracy.summary(record))
             if args.command == "accuracy":

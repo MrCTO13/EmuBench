@@ -13,14 +13,15 @@ import tempfile
 import time
 import uuid
 
-from . import carter, details, engines, journal, library
+from . import carter, circuit, details, engines, journal, library
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
 
 
 ADAPTERS = {"mgba": ("mGBA", PROFILE), "snes9x": ("Snes9x", "snes-boot-no-input-v1"),
-            "bsnes": ("bsnes", "snes-boot-no-input-v1")}
+            "bsnes": ("bsnes", "snes-boot-no-input-v1"),
+            "cartssnes": ("CartsSNES", "snes-boot-no-input-v1")}
 
 
 def validate_file(rom, emulator):
@@ -194,12 +195,13 @@ def public_title(title):
 
 def public_fields(result, title):
     from .accuracy import validated
-    scene = carter.PROFILES.get(result["profile"])
+    official = circuit.PROFILES.get(result["profile"])
+    scene = official or carter.PROFILES.get(result["profile"])
     allowed = (result["emulator"], result["profile"]) in ADAPTERS.values()
     if scene:
-        expected_console = {"mGBA":"gba","Snes9x":"snes","bsnes":"snes"}.get(result["emulator"])
-        allowed = (scene.console == expected_console and result.get("rom_sha256") == carter.GAMES[scene.console].digest
-                   and result["warmup_frames"] == scene.warmup and result["frames"] == carter.FRAMES
+        expected_console = {"mGBA":"gba","Snes9x":"snes","bsnes":"snes","CartsSNES":"snes"}.get(result["emulator"])
+        allowed = (scene.console == expected_console and result.get("rom_sha256") == (official.digest if official else carter.GAMES[scene.console].digest)
+                   and result["warmup_frames"] == scene.warmup and result["frames"] == (circuit.FRAMES if official else carter.FRAMES)
                    and tuple(result.get("scene_checkpoints", ())) in scene.references)
         title = scene.title
     if result["schema"] != 1 or not allowed:

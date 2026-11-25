@@ -198,7 +198,7 @@ int main(int argc, char **argv) {
     if (open_core()) return 1;
     struct retro_system_info info = {0};
     core.get_system_info(&info);
-    snes = !strcmp(argv[4], "Snes9x") || !strcmp(argv[4], "bsnes");
+    snes = !strcmp(argv[4], "Snes9x") || !strcmp(argv[4], "bsnes") || !strcmp(argv[4], "CartsSNES");
     if ((!snes && strcmp(argv[4], "mGBA")) || !info.library_name || strcmp(info.library_name, argv[4]))
         return fail("Selected library does not identify as the requested emulator");
     const char *version = info.library_version;

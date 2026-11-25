@@ -16,7 +16,7 @@ ARCHIVE_ERRORS = (BadZipFile, RuntimeError, EOFError, zlib.error, lzma.LZMAError
 
 def check_size(name, size, emulator):
     suffix = Path(name).suffix.lower()
-    if emulator not in SUPPORTED.get(suffix, ()):
+    if ("snes9x" if emulator == "cartssnes" else emulator) not in SUPPORTED.get(suffix, ()):
         raise ValueError(f"Unsupported cartridge format for {emulator}")
     minimum = 192 if suffix == ".gba" else 32768
     if not minimum <= size <= MAX_SIZE:
@@ -74,6 +74,8 @@ def discover(roots, emulator):
 
     def compatible(suffix):
         peers = SUPPORTED.get(suffix.lower(), ())
+        if emulator == "cartssnes" and "snes9x" in peers:
+            return ("cartssnes",)
         return peers if emulator == "all" else tuple(peer for peer in peers if peer == emulator)
 
     def scan(path, explicit=False):

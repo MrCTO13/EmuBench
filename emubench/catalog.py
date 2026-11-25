@@ -18,6 +18,8 @@ TARGETS = {
     "macos-arm64": ("apple/osx/arm64", "dylib"),
     "macos-x64": ("apple/osx/x86_64", "dylib"),
     WIN: ("windows/x86_64", "dll"),
+    "windows-arm64": (None, "dll"),
+    "linux-arm64": ("linux/aarch64", "so"),
     LINUX: ("linux/x86_64", "so"),
 }
 

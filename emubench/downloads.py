@@ -110,6 +110,8 @@ def core_index(target, refresh=None):
 
 
 def resolve(key, target, channel="auto", version="latest", index_refresh=None):
+    if key == "cartssnes":
+        raise ValueError("Select your CartsSNES libretro build with --core PATH")
     item = CATALOG[key]
     if not re.fullmatch(r"[A-Za-z0-9][\w.+-]{0,79}", version):
         raise ValueError("Invalid release tag")
@@ -134,6 +136,8 @@ def resolve(key, target, channel="auto", version="latest", index_refresh=None):
     if not item.core:
         raise ValueError(f"No published libretro core for {item.name} on {target}")
     path, ext = TARGETS[target]
+    if path is None:
+        raise ValueError(f"No upstream {target} prebuilt for {item.name}. Use a native --core or install mgba --version latest.")
     member = f"{item.core}_libretro.{ext}"
     name = member + ".zip"
     info = core_index(target, index_refresh).get(name)
@@ -157,13 +161,13 @@ def check_arch(path, target):
                 if 0 < count <= (len(head)-8)//stride and any(
                         int.from_bytes(head[8+i*stride:12+i*stride], "big") == cpu for i in range(count)):
                     return
-        elif target == "linux-x64":
-            if head[:6] == b"\x7fELF\x02\x01" and head[18:20] == b"\x3e\x00":
+        elif target in ("linux-x64", "linux-arm64"):
+            if head[:6] == b"\x7fELF\x02\x01" and int.from_bytes(head[18:20], "little") == (183 if target.endswith("arm64") else 62):
                 return
-        elif target == "windows-x64" and head.startswith(b"MZ") and len(head) >= 64:
+        elif target in ("windows-arm64", "windows-x64") and head.startswith(b"MZ") and len(head) >= 64:
             offset, = struct.unpack_from("<I", head, 60)
             f.seek(offset)
-            if f.read(6) == b"PE\0\0\x64\x86":
+            if f.read(4) == b"PE\0\0" and int.from_bytes(f.read(2), "little") == (0xaa64 if target.endswith("arm64") else 0x8664):
                 return
     raise ValueError(f"Downloaded executable does not match {target}")
 

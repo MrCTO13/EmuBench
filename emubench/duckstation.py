@@ -25,25 +25,52 @@ def execute(args):
     firmware=args.system_dir.resolve(strict=True)
     if not rom.is_file() or not firmware.is_dir() or not 100<=args.frames<=1000000 or args.timeout<=0:
         raise ValueError("Choose a local image, firmware directory and a valid measurement window")
-    version=subprocess.run([runner,"-version"],capture_output=True,text=True,timeout=15)
-    identity=re.search(r"DuckStation Regression Test Runner Version ([^\r\n]+)",version.stdout+version.stderr)
-    if version.returncode not in (0,1) or not identity:
-        raise ValueError("Executable did not identify as the DuckStation regression runner")
     with tempfile.TemporaryDirectory() as folder:
-        command=[runner,"-console","-log","Info","-renderer","Software","-frames",str(args.frames),
-                 "-dumpdir",folder,"-dumpinterval",str(max(1,args.frames//2)),
-                 "-setting","BIOS/SearchDirectory="+str(firmware),"--",rom]
+        root=Path(folder)
+        local=root/runner.name
+        shutil.copy2(runner,local)
+        runner_hash=engines.digest(local)
+        # Regtest establishes its BIOS and save folders before processing command-line settings.
+        # A private portable layout also avoids changing the player's DuckStation data.
+        (root/"portable.txt").touch()
+        resources=runner.parent/"resources"
+        if not resources.is_dir():
+            resources=runner.parent.parent/"Resources"
+        if not resources.is_dir():
+            raise ValueError("The regression runner needs its upstream resources directory")
+        try:
+            (root/"resources").symlink_to(resources,target_is_directory=True)
+        except OSError:
+            shutil.copytree(resources,root/"resources")
+        for sibling in runner.parent.iterdir():
+            if sibling.is_file() and (sibling.suffix.lower() in (".dll",".dylib",".so") or ".so." in sibling.name):
+                shutil.copy2(sibling,root/sibling.name)
+        bios=root/"bios"
+        bios.mkdir()
+        for item in firmware.iterdir():
+            if item.is_file() and item.stat().st_size in (524288,4194304):
+                shutil.copyfile(item,bios/item.name)
+        if not any(bios.iterdir()):
+            raise ValueError("No supported PlayStation BIOS image in --system-dir")
+        version=subprocess.run([local,"-version"],cwd=root,capture_output=True,text=True,timeout=15)
+        identity=re.search(r"DuckStation Regression Test Runner Version ([^\r\n]+)",version.stdout+version.stderr)
+        if version.returncode not in (0,1) or not identity:
+            raise ValueError("Executable did not identify as the DuckStation regression runner")
+        dumps=root/"checkpoints"
+        dumps.mkdir()
+        command=[local,"-console","-log","Info","-renderer","Software","-frames",str(args.frames),
+                 "-dumpdir",dumps,"-dumpinterval",str(max(1,args.frames//2)),"--",rom]
         # Keep the upstream log private. Only its total and checkpoint existence enter the receipt.
         output=subprocess.run(command,cwd=folder,capture_output=True,timeout=args.timeout)
         log=(output.stdout+output.stderr).decode(errors="replace")
         summary=re.search(r"Total execution time: ([0-9.]+)ms, average frame time [0-9.]+ms, ([0-9.]+) FPS",log)
-        images=list(Path(folder).rglob("*.png"))
+        images=list(dumps.rglob("frame_*.png"))
         if output.returncode or not summary or "GAME NOT STARTED" in log or not images or not all(
             valid_png(path) for path in images):
             raise ValueError("DuckStation did not confirm game startup, timing and a rendered checkpoint")
     result={"id":str(uuid.uuid4()),"finished_utc":journal.now(),"emulator":"DuckStation","version":identity[1],
             "profile":"duckstation-regtest-total-v1","frames":args.frames,"average_fps":round(float(summary[2])),
-            "elapsed_ms":float(summary[1]),"render_checkpoints":len(images),"runner_sha256":engines.digest(runner)}
+            "elapsed_ms":float(summary[1]),"render_checkpoints":len(images),"runner_sha256":runner_hash}
     dest=engines.home()/"regtest"/(result["id"]+".json")
     dest.parent.mkdir(parents=True,exist_ok=True)
     dest.write_text(json.dumps(result,indent=2),encoding="utf-8")

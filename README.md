@@ -187,3 +187,7 @@ Every scored run samples aggregate CPU use for 350 ms before timing. At 25% util
 One score now starts three fresh emulator processes. We select the pass with median unrounded throughput and show its trace and whole-number FPS. Relative spread = (fastest − slowest) / median. Spreads above 10% are stored locally and rejected for public scoring. Each local receipt includes all three measured durations. The same rule applies to standalone process timing.
 
 Speed listings identify diagnostic coverage. SNES ranking eligibility requires both upstream CPU/audio programs and all three coprocessor probes to pass on the measured build. A missing, failed or unresolved check withholds the ranking while the individual result stays visible. These are named test outcomes, not a percentage of compatibility with the game library.
+
+### Scoreboard domain
+
+The selected public hostname is **emubench.games**. The hosting project has a pending domain binding. Uploads and exported reports use the current verified HTTPS origin until registration, DNS ownership and the hosted certificate are confirmed. To complete the cutover, verify that the custom hostname serves the existing score API and change the single ORIGIN constant in emubench/service.py. Upload credentials are never forwarded across redirects.

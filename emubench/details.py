@@ -23,10 +23,11 @@ def timeline(times):
 
 
 def template_html():
+    from .service import ORIGIN
     root = Path(__file__).parent
     return (root / "report.html").read_text(encoding="utf-8").replace(
         "/* CHART_JS */", (root / "chart.js").read_text(encoding="utf-8")).replace(
-        "/* COMPARE_JS */", (root / "compare.js").read_text(encoding="utf-8"))
+        "/* COMPARE_JS */", (root / "compare.js").read_text(encoding="utf-8")).replace("__SCORE_BROWSER__", ORIGIN)
 
 
 def write_report(result, public, destination):

@@ -1,6 +1,6 @@
 // Compare only runs that used the same workload and execution protocol.
 function device(r){return [r.device_id,r.os,r.arch,r.cpu,r.execution||"native"].join("|");}
-function workload(r){return [r.profile,r.edition || (r.profile.includes("-circuit-")?"public":r.comparison_id||r.run_id),r.video_mode?.region,r.video_mode?.refresh_hz,r.warmup_frames,r.rendered_frames].join("|");}
+function workload(r){return [r.profile,r.edition || (r.profile.includes("-circuit-")?"public":r.comparison_id||r.run_id),r.mode||"legacy",r.video_mode?.region,r.video_mode?.refresh_hz,r.warmup_frames,r.rendered_frames].join("|");}
 function build(r){return r.emulator+" "+r.version+" · "+r.core_sha256.slice(0,12);}
 function group(rows,key){const m=new Map();for(const r of rows){const k=key(r);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;}
 function median(values){const v=values.slice().sort((a,b)=>a-b),i=Math.floor(v.length/2);return v.length%2?v[i]:(v[i-1]+v[i])/2;}

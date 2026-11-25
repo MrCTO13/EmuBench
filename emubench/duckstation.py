@@ -5,7 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-import uuid
+from . import standalone
 from . import engines, journal
 
 def arguments(commands):
@@ -58,23 +58,29 @@ def execute(args):
             raise ValueError("Executable did not identify as the DuckStation regression runner")
         dumps=root/"checkpoints"
         dumps.mkdir()
-        command=[local,"-console","-log","Info","-renderer","Software","-frames",str(args.frames),
+        command=[local,"-console","-log","Verbose","-renderer","Software","-frames",str(args.frames),
                  "-dumpdir",dumps,"-dumpinterval",str(max(1,args.frames//2)),"--",rom]
         # Keep the upstream log private. Only its total and checkpoint existence enter the receipt.
-        output=subprocess.run(command,cwd=folder,capture_output=True,timeout=args.timeout)
+        output,elapsed=standalone.timed(command,folder,args.timeout)
         log=(output.stdout+output.stderr).decode(errors="replace")
         summary=re.search(r"Total execution time: ([0-9.]+)ms, average frame time [0-9.]+ms, ([0-9.]+) FPS",log)
         images=list(dumps.rglob("frame_*.png"))
         if output.returncode or not summary or "GAME NOT STARTED" in log or not images or not all(
             valid_png(path) for path in images):
             raise ValueError("DuckStation did not confirm game startup, timing and a rendered checkpoint")
-    result={"id":str(uuid.uuid4()),"finished_utc":journal.now(),"emulator":"DuckStation","version":identity[1],
-            "profile":"duckstation-regtest-total-v1","frames":args.frames,"average_fps":round(float(summary[2])),
-            "elapsed_ms":float(summary[1]),"render_checkpoints":len(images),"runner_sha256":runner_hash}
-    dest=engines.home()/"regtest"/(result["id"]+".json")
-    dest.parent.mkdir(parents=True,exist_ok=True)
-    dest.write_text(json.dumps(result,indent=2),encoding="utf-8")
-    print(f"DuckStation · {result['average_fps']} average FPS · {len(images)} rendered checkpoints\nPrivate report: {dest}")
+        rates = re.findall(r"Video frame rate changed from [0-9.]+ to ([0-9.]+) fps",log)
+        if not rates:
+            raise ValueError("DuckStation did not report a guest video mode")
+        # Match the rounded upstream log to the CRTC clock and scan geometry from GPU.cpp.
+        observed = float(rates[-1])
+        candidates = [clock/(line/2)/lines for clock in (53693175,53203425)
+                      for line, counts in ((6825,(263,262.5)),(6810,(314,312.5)))
+                      for lines in counts]
+        match = [hz for hz in candidates if abs(hz-observed)<0.0051]
+        if len(match)!=1:
+            raise ValueError("Unknown PlayStation refresh mode")
+        standalone.receipt("DuckStation",identity[1],runner_hash,args.frames,elapsed,match[0],len(images))
+
 
 def valid_png(path):
     with path.open("rb") as f:

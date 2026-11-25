@@ -135,7 +135,7 @@ jobs:
         shell: bash
         run: |
           python -c "from emubench import engines; import subprocess,os,pathlib,json; core=engines.install(engines.REFERENCE)[0]; path=pathlib.Path(os.environ['RUNNER_TEMP'])/'pilot-qa.json'; cmd=['./dist/emubench','calibrate','--emulator','mgba','--dedicated','--core',str(core),'--windows','100','--blocks','5','--out',str(path)]; subprocess.run(cmd,check=True); first=path.read_bytes(); subprocess.run(cmd,check=True); assert first==path.read_bytes() and len(json.loads(first)['trials'])==10"
-      - name: Assemble native release and smoke-test offline reference
+      - name: Assemble native release and smoke-test the cached reference
         shell: bash
         run: |
           python tools/distribute.py

@@ -119,6 +119,8 @@ def main(argv=None):
     bench.add_argument("--idle-check",type=Path)
     bench.add_argument("--study",choices=("snes","gba"),help="Find and benchmark the 24 registered game editions")
     bench.add_argument("--share-title",action="store_true")
+    from . import standalone
+    standalone.arguments(commands)
     duckstation.arguments(commands)
     lab.arguments(commands)
     campaign.arguments(commands)
@@ -129,6 +131,9 @@ def main(argv=None):
             if not args.system_dir.is_dir():
                 raise ValueError("--system-dir requires a local directory")
             os.environ["EMUBENCH_SYSTEM_DIR"]=str(args.system_dir.resolve())
+        if args.command=="mgba-perf":
+            standalone.mgba(args)
+            return 0
         if args.command=="duckstation":
             return duckstation.execute(args) or 0
         if args.command=="study":

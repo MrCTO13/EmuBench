@@ -27,7 +27,7 @@ const fetch=async(path,method='GET',value)=>method==="POST"?raw(path,method,awai
 const id=randomUUID(),device=(await hash(publicBytes)).slice(0,32).match(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/).slice(1).join("-"),campaign=randomUUID(),token=randomUUID();
 const score={run_id:id,device_id:device,campaign_id:campaign,comparison_id:token,game:'Test public title',profile:'snes-boot-no-input-v1',emulator:'Snes9x',version:'1.63',source_commit:null,
  core_sha256:'a'.repeat(64),worker_sha256:'b'.repeat(64),os:'Windows',arch:'ARM64',cpu:'Example CPU',rendered_frames:100,warmup_frames:120,average_fps:100,low_1pct_fps:100,high_1pct_fps:100,
- video_mode:{region:'NTSC',source:'emulator-av',refresh_hz:60.0988},speed_x:100/60.0988,
+ mode:'libretro',video_mode:{region:'NTSC',source:'emulator-av',refresh_hz:60.0988},speed_x:100/60.0988,
  timing:[{start_ms:0,end_ms:1000,avg_fps:100,worst_fps:100,worst_ms:10,worst_frame:1,worst_at_ms:10}]};
 assert.equal((await fetch('/api/runs','POST',score)).status,201);
 assert.equal((await fetch('/api/runs','POST',score)).status,200);

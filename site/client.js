@@ -54,6 +54,10 @@ async function browse(){
   await more();
   // Comparisons need the entire filtered cohort. The browser's score table pages on demand.
   if(["compare","rankings","history"].includes(route))while(cursor)await more();
+  if(q.value.trim() && (route==="compare" || route==="browse") && rows.length){
+    const consoles=new Set(rows.map(r=>r.profile.split("-")[0]));
+    for(const c of checks)c.parentElement.hidden=!CORE_CONSOLES[c.value].some(system=>consoles.has(system));
+  }
   function render(){
     out.replaceChildren();const filtered=rows.filter(r=>checked().includes(r.emulator));
     if(route==="compare"){

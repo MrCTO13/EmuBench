@@ -17,6 +17,8 @@ Each edition gets 120 warm-up frames followed by 1,800 measured boot frames with
 
 CGB graphics use Matt Currie's [cgb-acid2 v1.1](https://github.com/mattcurrie/cgb-acid2/tree/v1.1), whose author provides an expected image and a photograph of a real unit. Emu Bench checks every pixel's color grouping across the 160 × 144 image, allowing display color correction. The test exercises scanline interrupts, windows, sprite limits and priority. It does not check exact display colors or every mode-3 timing edge.
 
+Two additional [Mealybug Tearoom tests](https://github.com/mattcurrie/mealybug-tearoom-tests/tree/70e88fb90b59d19dfbb9c3ac36c64105202bb1f4) change scroll or sprite enable during mode 3. The upstream CGB-C and CGB-D expected pixel layouts agree for these cases. The author supplies model-specific hardware photographs alongside the expected renders. Emu Bench forces Game Boy Color mode for these monochrome cartridges.
+
 Five independent CGB APU probes read the terminal verdict from [Blargg's CGB sound tests](https://github.com/retrio/gb-test-roms/tree/c240dd7d700e5c0b00a7bbba52b53e4ee67b5f15/cgb_sound). These check CPU-observable sound hardware behavior. They do not compare an analog recording. Program digests and the author's font-derived pass/fail masks are pinned. An unrecognized or unfinished screen yields “unresolved.”
 
 The SNES special-chip panel checks signed SA-1 multiplication, a Super FX register immediate and DSP-1 signed Q15 multiplication. Each original cartridge computes and displays a verdict. They are functional probes with program-defined expectations. Emu Bench has not yet recorded these cartridges on original SNES hardware.

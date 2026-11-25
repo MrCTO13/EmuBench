@@ -297,7 +297,14 @@ def latest_core(key):
         spec,path=get(key,"windows-x64","core")
         print(f"{CATALOG[key].name}: x64 core using Windows on Arm translation",file=sys.stderr)
         return path
-    spec, path = get(key, host_target(), "core")
+    try:
+        spec, path = get(key, host_target(), "core")
+    except ValueError as exc:
+        if key!="sameboy" or host_target()!="linux-arm64" or "absent from" not in str(exc):
+            raise
+        from . import sameboy_linux
+        return sameboy_linux.install()
+
     print(f"{CATALOG[key].name} core {spec.version}: {path}", file=sys.stderr)
     return path
 
@@ -320,7 +327,15 @@ def batch(keys, target, channel, version, plan):
     for key in keys:
         selected=("core" if CATALOG[key].core else "desktop") if channel=="bench" else channel
         try:
-            if target == "windows-arm64" and target == host_target() and selected != "desktop" and key in ("mgba","snes9x","bsnes"):
+            if key=="sameboy" and target=="linux-arm64" and selected in ("core","auto") and "sameboy_libretro.so.zip" not in core_index(target):
+                if plan:
+                    print("SameBoy: native source build from the upstream release on Linux ARM64")
+                elif target==host_target():
+                    from . import sameboy_linux
+                    print(sameboy_linux.install(version))
+                else:
+                    raise ValueError("Run the SameBoy source installer on the target Linux ARM64 machine")
+            elif target == "windows-arm64" and target == host_target() and selected != "desktop" and key in ("mgba","snes9x","bsnes"):
                 if plan:
                     print(f"{CATALOG[key].name}: native upstream source build ({version})")
                 elif key == "mgba":

@@ -137,6 +137,8 @@ static bool environment(unsigned command, void *data) {
         else if (!strcmp(var->key, "mgba_use_bios")) var->value = "OFF";
         else if (!strcmp(var->key, "mgba_skip_bios")) var->value = "ON";
         else if (!strcmp(var->key, "mgba_idle_optimization")) var->value = "Don't Remove";
+        else if (getenv("EMUBENCH_FORCE_COLOR") && !strcmp(var->key, "sameboy_model")) var->value = "Game Boy Color";
+        else if (getenv("EMUBENCH_FORCE_COLOR") && !strcmp(var->key, "gambatte_gb_hwmode")) var->value = "GBC";
         else if (!strcmp(var->key, "bsnes_run_ahead_frames")) var->value = "OFF";
         else { var->value = NULL; return false; }
         return true;

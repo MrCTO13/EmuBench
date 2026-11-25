@@ -12,6 +12,7 @@ import lzma
 from . import adapters, engines
 
 SUPPORTED = {ext:adapters.ROUTES[console][1] for ext,console in adapters.SUFFIXES.items()}
+SUPPORTED[".chd"] += adapters.ROUTES["pcecd"][1]
 EXTERNAL = {".pbp", ".chd", ".zip"}
 MAX_SIZE = 32 * 1024**2
 ARCHIVE_ERRORS = (BadZipFile, RuntimeError, EOFError, zlib.error, lzma.LZMAError)
@@ -100,6 +101,7 @@ def discover(roots, emulator):
             if peers and path.suffix.lower() in EXTERNAL:
                 check_size(path.name, path.stat().st_size, peers[0])
                 if path.suffix.lower()==".chd" and emulator=="all":
+                    skipped(path,"CHD is shared by several consoles. Select a PlayStation or PC Engine CD emulator.")
                     return  # Several systems share CHD. Require a selected emulator.
                 digest = engines.digest(path)
                 identity = (digest, peers, path.stem if path.suffix.lower()==".zip" else "")

@@ -1,5 +1,7 @@
 """Game Boy Color tests with independent, published expected results."""
 from hashlib import sha256
+from io import BytesIO
+from zipfile import ZipFile
 from urllib.parse import quote
 
 from . import engines, scores, video
@@ -16,6 +18,15 @@ CHECKS = {
     "APU sweep": ("04-sweep.gb","abfd1f6fa9e6701e46135ac9f5bb5b10a46cde22d0fc34922636aa09a5647483"),
     "APU active wave RAM read": ("09-wave read while on.gb","9b101c68b2de1930df74c19aaf22cce74d37dd5aade93855c805ecb2e1e83fd3"),
 }
+TIMING_SOURCE = "https://raw.githubusercontent.com/mattcurrie/mealybug-tearoom-tests/70e88fb90b59d19dfbb9c3ac36c64105202bb1f4/mealybug-tearoom-tests.zip"
+TIMING_ARCHIVE = "e2fa6ca96ad48bd64d7297fda042db04c15117a730da3bbd590f139e89b150bd"
+TIMING = {
+    "PPU mode 3 scroll low bits": ("m3_scx_low_3_bits.gb","433e59a9eb9a27c962cd613c24c2f8d728ac9e498233667959eb07995f0fef5f",
+                                   "d9ca6f1b8da72be08a57a292cf3b7ba1ff0760fb04e0dbf3f852b1d2aa34eb45"),
+    "PPU mode 3 sprite enable": ("m3_lcdc_obj_en_change.gb","943be0ef4a104bc71139f21de2321ad4510e32dc756739be0d97fc56ff59e18c",
+                                  "9a6d6ee14e2de5ddebdcb61e8648c5298475c4e5d500c4c0adb86fcb5eeeed89"),
+}
+CHECKS.update({k:(v[0],v[1]) for k,v in TIMING.items()})
 # First-occurrence palette indices of every pixel in the author's v1.1 img/reference.png.
 # This tests the entire color partition while allowing different display color corrections.
 REFERENCE = "dd9ea2c83d55be2d7a5d26fa70ce1f42fce3e2464d44cdd9e54f7eb626125aaa"
@@ -24,7 +35,7 @@ def verdict(name, capture):
     w,h,rgb = video.rgb_frame(capture)
     if (w,h)!=(160,144):
         return "unresolved"
-    if name != GRAPHICS:
+    if name != GRAPHICS and name not in TIMING:
         # The upstream console prints its verdict on a tile-aligned line.
         for y in range(0,h,8):
             for label,digest in (("pass","7bdc040aded072fa96fbf2abb9bb17acbd95772cf7c2b4a70bfe12f03c46b467"),
@@ -39,7 +50,8 @@ def verdict(name, capture):
         if len(colors)>8:
             return "fail"
         pixels.append(colors.setdefault(color,len(colors)))
-    return "pass" if sha256(pixels).hexdigest()==REFERENCE else "fail"
+    expected=TIMING[name][2] if name in TIMING else REFERENCE
+    return "pass" if sha256(pixels).hexdigest()==expected else "fail"
 
 def run(emulator, core):
     from .accuracy import checked_download
@@ -48,12 +60,20 @@ def run(emulator, core):
     for name,(source,digest) in CHECKS.items():
         graphics = name==GRAPHICS
         url = source if graphics else SOUND+quote(source)
-        data = checked_download(engines.home()/"conformance"/"gbc-v1"/digest,digest,url)
+        cache=engines.home()/"conformance"/"gbc-v1"
+        if name in TIMING:
+            archive=checked_download(cache/TIMING_ARCHIVE,TIMING_ARCHIVE,TIMING_SOURCE)
+            with ZipFile(BytesIO(archive)) as z:
+                data=z.read(source)
+            if sha256(data).hexdigest()!=digest:
+                raise ValueError("Unexpected PPU timing workload")
+        else:
+            data = checked_download(cache/digest,digest,url)
         frames = 240 if graphics else 1200
         try:
             _,(capture,) = scores.run_worker(worker,core,data,120,frames,60,None,
                 scores.ADAPTERS[emulator][0],bytes(2*(120+frames)),diagnostic=True,
-                filename="workload.gbc")
+                filename="workload.gbc",force_color=True)
             checks[name] = verdict(name,capture)
         except (TimeoutError,ValueError):
             checks[name] = "unresolved"

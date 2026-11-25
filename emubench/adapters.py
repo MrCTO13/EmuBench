@@ -16,6 +16,7 @@ ROUTES = {
     "pce": (("pce",), ("beetle-pce-fast", "beetle-supergrafx")),
     "sgx": (("sgx",), ("beetle-supergrafx",)),
     "psx": (("exe", "pbp", "chd"), ("pcsx-rearmed",)),
+    "pcecd": ((), ("beetle-pce-fast","beetle-supergrafx")),
     "arcade": (("zip",), ("finalburn-neo", "mame")),
 }
 SUFFIXES = {"."+ext:console for console,(extensions,_) in ROUTES.items() for ext in extensions}
@@ -27,3 +28,9 @@ CONSOLES = {name:[console for console,(_,peers) in ROUTES.items()
 
 def profile(console):
     return console+"-boot-no-input-v1"
+
+
+def content_console(suffix, emulator):
+    if suffix==".chd" and emulator in ROUTES["pcecd"][1]:
+        return "pcecd"
+    return SUFFIXES.get(suffix)

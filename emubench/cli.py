@@ -23,7 +23,7 @@ def main(argv=None):
     which = dl.add_mutually_exclusive_group(required=True)
     which.add_argument("emulator", nargs="?", type=downloads.emulator_id, choices=tuple(CATALOG))
     which.add_argument("--all", action="store_true", help="Fetch the complete third-party shortlist")
-    dl.add_argument("--channel", choices=["auto", "desktop", "core", "bench"], default="auto")
+    dl.add_argument("--channel", choices=["auto", "desktop", "core", "bench"])
     dl.add_argument("--version", default="latest", help="Latest package, or a desktop release tag")
     dl.add_argument("--target", choices=tuple(TARGETS), help="Default to this computer")
     dl.add_argument("--list-only", action="store_true", help="Resolve upstream versions without downloading")
@@ -109,6 +109,7 @@ def main(argv=None):
     bench.add_argument("--queue", type=Path, help="Location for the new resumable queue")
     bench.add_argument("--emulator", choices=(*adapters.NAMES,"all","arcade"),default="all")
     bench.add_argument("--core", type=Path)
+    bench.add_argument("--carts-core",type=Path,help="Include CartsSNES in an all-emulator queue")
     bench.add_argument("--frames",type=int)
     bench.add_argument("--warmup-frames",type=int)
     bench.add_argument("--system-dir",type=Path,help="Local firmware directory")
@@ -134,7 +135,7 @@ def main(argv=None):
             import uuid
             args.queue = args.queue or engines.home()/"campaigns"/(str(uuid.uuid4())+".sqlite")
             args.rom = [args.rom]
-            args.rom_dir=args.carter=args.circuit=args.carts_core=args.version=args.days=None
+            args.rom_dir=args.carter=args.circuit=args.version=args.days=None
             args.loop=args.wait_uploads=False
             args.latest_core=True
             args.timeout=args.idle_seconds=300
@@ -168,7 +169,7 @@ def main(argv=None):
             uploads.status()
         elif args.command == "download":
             return downloads.batch(CATALOG if args.all else [args.emulator], args.target or host_target(),
-                                   args.channel, args.version, args.list_only)
+                                   args.channel or ("bench" if args.all else "auto"), args.version, args.list_only)
         elif args.command in ("carter","suite","accuracy","chips"):
             release = None
             if args.command == "suite" and args.emulator == "mgba" and not args.core and not args.version and engines.bundled_reference():

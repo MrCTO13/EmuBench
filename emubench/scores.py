@@ -62,7 +62,7 @@ class InterruptedWindow(InterruptedError):
     """The device became busy or another worker owns the measurement slot."""
 
 
-def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False, filename=None, external=None, expected_digest=None):
+def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False, filename=None, external=None, expected_digest=None, force_color=False):
     engines.home().mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
            "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
@@ -70,6 +70,11 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
     with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryFile() as source, \
          tempfile.TemporaryFile() as errors:
         root = Path(folder)
+        env.pop("EMUBENCH_STAGED",None)
+        env.pop("EMUBENCH_CONTENT_NAME",None)
+        env.pop("EMUBENCH_FORCE_COLOR",None)
+        if force_color:
+            env["EMUBENCH_FORCE_COLOR"]="1"
         if filename:
             env["EMUBENCH_CONTENT_NAME"] = filename
         if external:
@@ -133,7 +138,7 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
         raise ValueError("Use 100–1,000,000 measured frames, 0–1,000,000 warm-up frames and a positive timeout")
     name, profile = ADAPTERS[emulator]
     suffix = Path(member or rom.name).suffix.lower()
-    console = adapters.SUFFIXES.get(suffix)
+    console = adapters.content_console(suffix,emulator)
     external = rom if member is None and suffix in library.EXTERNAL else None
     if member is None:
         validate_file(rom, emulator)

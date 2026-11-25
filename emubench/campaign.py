@@ -209,7 +209,7 @@ def resume(db, path, plan):
             workload["scene"] = scene
     ready = idle_gate(plan)
     for build in plan["cores"].values():
-        if engines.digest(Path(build["path"])) != build["sha256"]:
+        if "error" not in build and engines.digest(Path(build["path"])) != build["sha256"]:
             raise ValueError("A selected core has changed. Create a queue for the new build.")
     with db:
         db.execute("UPDATE campaign SET started=COALESCE(started,?)", (time.time(),))
@@ -252,6 +252,18 @@ def resume(db, path, plan):
                 workload = plan["workloads"][idx]
                 emulator = workload["emulator"]
                 build = plan["cores"][emulator]
+                if "error" in build:
+                    stored=json.loads(db.execute("SELECT plan FROM campaign").fetchone()[0])
+                    plan["cores"]=stored["cores"]
+                    build=plan["cores"][emulator]
+                if "error" in build and attempts:
+                    try:
+                        core=downloads.latest_core(emulator)
+                        build=dict(path=str(core),sha256=engines.digest(core),tag=None,commit=None)
+                        plan["cores"][emulator]=build
+                        db.execute("UPDATE campaign SET plan=?",(json.dumps(plan),))
+                    except (ValueError,OSError,subprocess.SubprocessError) as exc:
+                        build["error"]=str(exc)
                 rom = Path(workload["path"])
                 local_name = Path(workload.get("member", rom.name)).name
                 print(f"Round {number}, job {job_id}: {local_name} ({emulator})", flush=True)
@@ -299,7 +311,7 @@ def resume(db, path, plan):
                     message, wait = str(exc), 10
                 except (OSError, ValueError, subprocess.SubprocessError) as exc:
                     db.execute("INSERT INTO failures VALUES (?,?,?)", (job_id, time.time(), str(exc)[:240]))
-                    attempts = 3 if "error" in build else attempts+1
+                    attempts += 1
                     status = "held" if attempts >= 3 else "pending"
                     db.execute("UPDATE jobs SET status=?,attempts=?,available=?,error=? WHERE id=?",
                                (status, attempts, now + 30 * attempts, str(exc)[:240], job_id))

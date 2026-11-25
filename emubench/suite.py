@@ -2,6 +2,7 @@
 import sys
 import uuid
 
+from . import attest
 from . import accuracy, chips, circuit, engines, journal, scores, uploads
 
 
@@ -38,6 +39,7 @@ def run(args, core, release):
                     result["paced"]=scores.paced_pass(result,core,rom,120)
                 result.update(id=run_id,started_utc=start,finished_utc=journal.now(),local_name=scene.title,campaign_id=group)
                 dest=args.out_dir/(scene.profile+"-"+run_id+".json") if args.out_dir else None
+                attest.complete(result)
                 path=scores.save(result,dest)
                 journal.complete(result,path)
             print(f"{scene.title} · {result['average_fps']} avg / {result['low_1pct_fps']} low / "

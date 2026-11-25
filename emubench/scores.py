@@ -275,6 +275,8 @@ def public_fields(result, title):
     if not isinstance(cpu, str) or not 1 <= len(cpu) <= 160 or not cpu.isprintable():
         raise ValueError("Invalid processor model")
     cohort = {"edition":edition["edition"]} if edition else {}
+    if "attestation" in result:
+        cohort["attestation"]=result["attestation"]
     if "execution" in result:
         if result["execution"]!="x64-on-arm64" or result["system"]!="Windows" or result["arch"].lower() not in ("arm64","aarch64"):
             raise ValueError("Invalid emulator execution architecture")

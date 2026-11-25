@@ -28,6 +28,8 @@ def record_scene_failure(run_id, campaign_id, scene, emulator, core_sha, worker_
                   outcome="failed", reason=reason, game=scene.title, profile=scene.profile,
                   emulator=scores.ADAPTERS[emulator][0], core_sha256=core_sha, worker_sha256=worker_sha,
                   os=platform.system(), arch=platform.machine(), cpu=scores.cpu_model())
+    from . import attest
+    record["attestation"]=attest.seal(record)
     with journal.database() as db:
         if destination_for(db)=="service" and db.execute("SELECT 1 FROM upload_settings WHERE enabled=1").fetchone():
             db.execute("INSERT OR IGNORE INTO score_outbox VALUES(?,?)", (run_id, json.dumps(record)))

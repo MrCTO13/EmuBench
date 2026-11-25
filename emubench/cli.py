@@ -5,6 +5,7 @@ import sqlite3
 import subprocess
 import sys
 
+from . import attest
 from . import duckstation, lab, adapters, accuracy, calibration, campaign, carter, chips, circuit, desktop, details, downloads, engines, identify, journal, scores, service, suite, uploads
 from .catalog import CATALOG, TARGETS, host_target
 from http.client import HTTPException
@@ -211,6 +212,7 @@ def main(argv=None):
                         result["source_commit"] = release["commit"]
                     result.update(id=run_id,local_name=scene.title,started_utc=start,finished_utc=journal.now(),accuracy=record)
                     dest = args.out_dir / (scene.profile + "-" + run_id + ".json") if args.out_dir else None
+                    attest.complete(result)
                     path = scores.save(result,dest)
                     journal.complete(result,path)
                 print(f"{scene.title} · {scene.description}\n"
@@ -267,6 +269,7 @@ def main(argv=None):
                     result["paced"] = scores.paced_pass(result, core.resolve(), rom.expanduser(), args.timeout)
                 result["share_title"] = args.share_title
                 result.update(id=run_id, local_name=rom.name, started_utc=start, finished_utc=journal.now())
+                attest.complete(result)
                 path = scores.save(result, args.out)
                 journal.complete(result, path, args.game)
             print(f"{result['emulator']} {result['version']} · {result['rendered_frames']} rendered frames\n"

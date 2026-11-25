@@ -73,16 +73,19 @@ async function payload(req) {
     const {done,value}=await reader.read();
     if (done) break;
     size+=value.length;
-    if(size>48000){await reader.cancel();throw Error();}
+    if(size>96000){await reader.cancel();throw Error();}
     chunks.push(value);
   }
-  return validate(await new Response(new Blob(chunks)).json());
+  return new Response(new Blob(chunks)).json();
 }
 export default {async fetch(request,env) {
   const url=new URL(request.url), path=url.pathname, db=env.DB;
+  if (request.method==="POST" && path==="/api/installs")return enroll(request,db);
   if (request.method==="POST" && path==="/api/runs") {
+    const key=await authorize(request,db);
+    if(typeof key!=="string")return key;
     let r;
-    try {r=await payload(request);} catch {return json({error:"Invalid or oversized score"},400);}
+    try {r=await signedRun(request,key);} catch {return json({error:"Invalid or oversized score"},400);}
     const data=JSON.stringify(r);
     const inserted=await db.prepare("INSERT OR IGNORE INTO runs(id,received,game,profile,emulator,campaign,device,payload) VALUES(?,unixepoch(),?,?,?,?,?,?)")
       .bind(r.run_id,r.game,r.profile,r.emulator,r.campaign_id??null,r.device_id??r.run_id,data).run();
@@ -105,7 +108,7 @@ export default {async fetch(request,env) {
       clauses.push("(received,id)<(?,?)");params.push(Number(stamp),id);}
     const found=await db.prepare("SELECT id,received,payload FROM runs "+(clauses.length?"WHERE "+clauses.join(" AND "):"")+" ORDER BY received DESC,id DESC LIMIT 101").bind(...params).all();
     const page=found.results.slice(0,100);
-    return json({rows:page.map(({received,payload})=>{const {timing,scene_checkpoints,...r}=JSON.parse(payload);return {...r,received};}),
+    return json({rows:page.map(({received,payload})=>{const {timing,scene_checkpoints,proof,...r}=JSON.parse(payload);return {...r,received};}),
       next:found.results.length>100?page[99].received+"."+page[99].id:null});
   }
   if(path.startsWith("/api/run/") && UUID.test(path.slice(9))) {

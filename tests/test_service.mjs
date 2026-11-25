@@ -7,10 +7,24 @@ import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
 const worker=(await import(pathToFileURL(process.argv[2]))).default;
 const sql=new DatabaseSync(':memory:');
-sql.exec(readFileSync('site/drizzle/'+readdirSync('site/drizzle').find(n=>n.endsWith('.sql')),'utf8'));
+for(const name of readdirSync('site/drizzle').filter(n=>n.endsWith('.sql')).sort())sql.exec(readFileSync('site/drizzle/'+name,'utf8'));
 const db={prepare(query){const op=sql.prepare(query);return {bind(...args){return {all:()=>({results:op.all(...args)}),first:()=>op.get(...args),run:()=>({meta:op.run(...args)})}}}}};
-const fetch=(path,method='GET',value)=>worker.fetch(new Request('https://example.test'+path,{method,headers:{'content-type':'application/json'},body:method==='GET'?undefined:JSON.stringify(value)}),{DB:db});
-const id=randomUUID(), device=randomUUID(), campaign=randomUUID(), token=randomUUID();
+const raw=(path,method='GET',value,headers={})=>worker.fetch(new Request('https://example.test'+path,{method,headers:{'content-type':'application/json',...headers},body:method==='GET'?undefined:JSON.stringify(value)}),{DB:db});
+const keys=await crypto.subtle.generateKey("Ed25519",true,["sign","verify"]);
+const toHex=b=>Buffer.from(b).toString("hex");
+const sign=async s=>toHex(await crypto.subtle.sign("Ed25519",keys.privateKey,Buffer.from(s)));
+const publicBytes=await crypto.subtle.exportKey("raw",keys.publicKey);
+const pub=toHex(publicBytes), bearer=toHex(crypto.getRandomValues(new Uint8Array(32)));
+const hash=async b=>toHex(await crypto.subtle.digest("SHA-256",b));
+const digest=await hash(Buffer.from(bearer));
+assert.equal((await raw("/api/installs","POST",{key:pub,token_hash:digest,signature:await sign("EmuBench enroll v1\n"+digest)})).status,200);
+const headers={"Authorization":"Bearer "+bearer,"X-EmuBench-Key":pub};
+async function envelope(value){
+  const {game,...rest}=value, record=JSON.stringify(rest),seal=await sign("EmuBench run v1\n"+record);
+  return {game,record,seal,signature:await sign("EmuBench submission v1\n"+seal+"\n"+game)};
+}
+const fetch=async(path,method='GET',value)=>method==="POST"?raw(path,method,await envelope(value),headers):raw(path);
+const id=randomUUID(),device=(await hash(publicBytes)).slice(0,32).match(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/).slice(1).join("-"),campaign=randomUUID(),token=randomUUID();
 const score={run_id:id,device_id:device,campaign_id:campaign,comparison_id:token,game:'Test public title',profile:'snes-boot-no-input-v1',emulator:'Snes9x',version:'1.63',source_commit:null,
  core_sha256:'a'.repeat(64),worker_sha256:'b'.repeat(64),os:'Windows',arch:'ARM64',cpu:'Example CPU',rendered_frames:100,warmup_frames:120,average_fps:100,low_1pct_fps:100,high_1pct_fps:100,
  timing:[{start_ms:0,end_ms:1000,avg_fps:100,worst_fps:100,worst_ms:10,worst_frame:1,worst_at_ms:10}]};
@@ -38,3 +52,9 @@ assert.equal((await fetch('/api/runs','POST',{...score,emulator:"Nestopia UE",pr
 const studies=await (await fetch('/api/studies')).json();
 assert.equal(studies.studies.length,2);
 assert.equal(studies.studies[0].groups.flatMap(g=>g.games).length,24);
+
+assert.equal((await raw("/api/runs","POST",score)).status,401);
+const changed=await envelope(score);changed.record=changed.record.replace("Snes9x","bsnes");
+assert.equal((await raw("/api/runs","POST",changed,headers)).status,400);
+let status=0;for(let i=0;i<181 && status!==429;i++)status=(await fetch("/api/runs","POST",score)).status;
+assert.equal(status,429);

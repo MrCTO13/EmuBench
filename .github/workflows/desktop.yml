@@ -37,6 +37,7 @@ jobs:
         if: matrix.platform == 'windows-arm64'
         shell: msys2 {0}
         run: cygpath -w /usr/bin >> "$GITHUB_PATH"
+      - run: python -m pip install .
       - name: Test calculations and publication
         run: python -m unittest discover -s tests
       - name: Exercise score API, pagination, matching and ranking

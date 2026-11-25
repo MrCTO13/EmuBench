@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from . import attest
 from . import lab, adapters, accuracy, carter, chips, circuit, downloads, engines, journal, library, scores, uploads
 
 
@@ -303,6 +304,7 @@ def resume(db, path, plan):
                         if emulator=="mgba" and build["tag"] and build["commit"]:
                             result["build_recipe"]="mgba-libretro-cmake-v1"
                         result.update(id=run_id, local_name=scene.title if scene else local_name, started_utc=started, finished_utc=journal.now())
+                        attest.complete(result)
                         # The job, journal and pending upload must survive a restart together.
                         # Attach only after measurement, which uses its own device journal connection.
                         db.execute("ATTACH DATABASE ? AS device", (str(engines.home() / "history.sqlite"),))

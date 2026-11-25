@@ -15,3 +15,10 @@ export const runs = sqliteTable("runs", {
   index("runs_profile").on(table.profile, table.emulator),
   index("runs_device").on(table.device)
 ]);
+
+export const installs = sqliteTable("installs", {
+  key: text("key").primaryKey(), tokenHash: text("token_hash").notNull()
+});
+export const limits = sqliteTable("limits", {
+  scope: text("scope").primaryKey(), window: integer("window").notNull(), used: integer("used").notNull()
+});

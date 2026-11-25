@@ -20,4 +20,4 @@ for path in sorted((root/"reviewed").glob("*.json")):
     registry["receipts"].append(receipt)
 client = "const CORE_CONSOLES="+json.dumps(adapters.CONSOLES)+";\nconst LAB="+json.dumps(registry)+";\n"+"\n".join(p.read_text() for p in (root.parent / "emubench/chart.js", root/"analysis.js", root/"lab.js", root/"demo.js", root/"library.js", root/"client.js"))
 out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text("const CORE_CONSOLES="+json.dumps(adapters.CONSOLES)+";\nconst COLOR_CHECKS="+json.dumps(list(color_checks.CHECKS))+";\nconst CHIP_CHECKS="+json.dumps(chips.NAMES)+";\nconst LAB="+json.dumps(registry)+";\nconst PROFILES="+json.dumps(profiles)+";\nconst PAGE="+json.dumps(page)+";\nconst CLIENT="+json.dumps(client)+";\n"+(root/"worker.mjs").read_text())
+out.write_text("const CORE_CONSOLES="+json.dumps(adapters.CONSOLES)+";\nconst COLOR_CHECKS="+json.dumps(list(color_checks.CHECKS))+";\nconst CHIP_CHECKS="+json.dumps(chips.NAMES)+";\nconst LAB="+json.dumps(registry)+";\nconst PROFILES="+json.dumps(profiles)+";\nconst PAGE="+json.dumps(page)+";\nconst CLIENT="+json.dumps(client)+";\n"+(root/"auth.js").read_text()+"\n"+(root/"worker.mjs").read_text())

@@ -13,6 +13,9 @@ from . import journal, scores, service
 def enqueue(db, result, title):
     if not db.execute("SELECT 1 FROM upload_settings WHERE enabled=1").fetchone():
         return
+    if result.get("repeatability",{}).get("accepted") is False:
+        print("Saved locally. Three-pass spread exceeds 10%.",file=sys.stderr)
+        return
     try:
         summary = scores.public_fields(result, title)
     except (ValueError, KeyError, TypeError) as exc:

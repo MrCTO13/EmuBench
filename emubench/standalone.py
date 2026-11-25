@@ -15,10 +15,10 @@ from . import conditions, engines, journal
 
 
 @contextmanager
-def slot():
+def slot(name='measure.lock'):
     directory = engines.home()
     directory.mkdir(parents=True, exist_ok=True)
-    with (directory / "measure.lock").open("a+b") as lock:
+    with (directory / name).open("a+b") as lock:
         try:
             if os.name == "nt":
                 import msvcrt
@@ -43,17 +43,32 @@ def timed(command, directory, timeout):
     return output, elapsed, idle
 
 
-def receipt(emulator, version, digest, frames, elapsed, hz, checkpoints, idle):
+def receipt(emulator, version, digest, frames, elapsed, hz, checkpoints, idle, content_sha256):
     fps = 1e9 * frames / elapsed
     data = dict(id=str(uuid.uuid4()), finished_utc=journal.now(), emulator=emulator, version=version,
                 mode="standalone-process-v1", runner_sha256=digest, frames=frames, elapsed_ns=elapsed,
-                idle=idle, refresh_hz=hz, average_fps=round(fps), speed_x=fps/hz, render_checkpoints=checkpoints)
+                content_sha256=content_sha256,idle=idle, refresh_hz=hz, average_fps=round(fps), speed_x=fps/hz, render_checkpoints=checkpoints)
+    return data
+
+
+def run_series(measure, args):
+    from . import repeats
+    with slot("score-series.lock"):
+        runs = [measure(args) for _ in range(repeats.COUNT)]
+    for key in ("emulator","runner_sha256","frames","refresh_hz","content_sha256"):
+        if len({r[key] for r in runs}) != 1:
+            raise ValueError("Standalone workload changed between passes")
+    report = repeats.summarize([r["elapsed_ns"] for r in runs], args.frames)
+    data = runs[report["selected"]]
+    data["repeatability"] = report
+    data["idle"] = max((r["idle"] for r in runs),key=lambda i:i["cpu_percent"])
     dest = engines.home() / "standalone" / (data["id"]+".json")
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("x", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    print(f"{emulator} standalone · {fps/hz:.2f}× · {round(fps)} average FPS (launch through exit)\nPrivate report: {dest}")
-    return data
+    status="accepted" if report["accepted"] else "rejected"
+    print(f"{data['emulator']} standalone · {data['speed_x']:.2f}× · {data['average_fps']} FPS "
+          f"· spread {report['relative_spread']:.1%} ({status})\\nPrivate report: {dest}")
 
 
 def arguments(commands):
@@ -85,4 +100,4 @@ def mgba(args):
         rows = list(csv.DictReader(io.StringIO(output.stdout.decode())))
         if len(rows)!=1 or rows[0].get("renderer")!="software" or int(rows[0]["frames"])!=args.frames:
             raise ValueError("mGBA did not confirm software rendering for the requested frames")
-        return receipt("mGBA",match[1],digest,args.frames,elapsed,4194304/70224,None,idle)
+        return receipt("mGBA",match[1],digest,args.frames,elapsed,4194304/70224,None,idle,engines.digest(game))

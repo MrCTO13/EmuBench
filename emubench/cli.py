@@ -132,10 +132,11 @@ def main(argv=None):
                 raise ValueError("--system-dir requires a local directory")
             os.environ["EMUBENCH_SYSTEM_DIR"]=str(args.system_dir.resolve())
         if args.command=="mgba-perf":
-            standalone.mgba(args)
+            standalone.run_series(standalone.mgba,args)
             return 0
         if args.command=="duckstation":
-            return duckstation.execute(args) or 0
+            standalone.run_series(duckstation.execute,args)
+            return 0
         if args.command=="study":
             return lab.execute(args) or 0
         if args.command == "bench":
@@ -279,6 +280,8 @@ def main(argv=None):
                 journal.complete(result, path, args.game)
             print(f"{result['emulator']} {result['version']} · {result['rendered_frames']} rendered frames\n"
                   f"Console speed {result['speed_x']:.2f}× ({result['video_mode']['refresh_hz']:.6f} Hz)\n"
+                  f"Three-pass spread {result['repeatability']['relative_spread']:.1%} "
+                  f"({'accepted' if result['repeatability']['accepted'] else 'rejected'})\n"
                   f"Average FPS   {result['average_fps']:.0f}\n"
                   f"1% low FPS    {result['low_1pct_fps']:.0f}\n"
                   f"1% high FPS   {result['high_1pct_fps']:.0f}\nPrivate result: {path}")

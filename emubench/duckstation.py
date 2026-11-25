@@ -79,7 +79,7 @@ def execute(args):
         match = [hz for hz in candidates if abs(hz-observed)<0.0051]
         if len(match)!=1:
             raise ValueError("Unknown PlayStation refresh mode")
-        standalone.receipt("DuckStation",identity[1],runner_hash,args.frames,elapsed,match[0],len(images),idle)
+        return standalone.receipt("DuckStation",identity[1],runner_hash,args.frames,elapsed,match[0],len(images),idle,engines.digest(rom))
 
 
 def pixel_digest(path):

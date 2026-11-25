@@ -137,6 +137,22 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
 
 
 def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_rom=None, emulator="mgba", scene=None, member=None):
+    from . import repeats, standalone
+    with standalone.slot("score-series.lock"):
+        runs = []
+        for _ in range(repeats.COUNT):
+            run = _measure_once(rom,requested,core,warmup,frames,timeout,ready,expected_rom,emulator,scene,member)
+            if runs and any(run[k]!=runs[0][k] for k in ("core_sha256","worker_sha256","rom_sha256","video_mode","profile")):
+                raise ValueError("Emulator, ROM or video mode changed between passes")
+            runs.append(run)
+    report = repeats.summarize([sum(r["frame_ns"]) for r in runs], frames)
+    selected = runs[report["selected"]]
+    selected["repeatability"] = report
+    selected["idle"] = max((r["idle"] for r in runs), key=lambda i:i["cpu_percent"])
+    return selected
+
+
+def _measure_once(rom, requested, core, warmup, frames, timeout, ready, expected_rom, emulator, scene, member):
     if not 100 <= frames <= 1_000_000 or not 0 <= warmup <= 1_000_000 or timeout <= 0:
         raise ValueError("Use 100–1,000,000 measured frames, 0–1,000,000 warm-up frames and a positive timeout")
     name, profile = ADAPTERS[emulator]
@@ -297,6 +313,8 @@ def public_fields(result, title):
     cohort = {"edition":edition["edition"]} if edition else {}
     if "video_mode" in result:
         cohort.update(mode="libretro",video_mode=result["video_mode"], speed_x=speed(result["frame_ns"], result["video_mode"]))
+    if "repeatability" in result:
+        cohort["repeatability"] = result["repeatability"]
     if "idle" in result:
         cohort["idle"] = result["idle"]
     if "frame_check" in result:

@@ -67,6 +67,8 @@ def review(study, plan, jobs):
         game=result.get("catalog_match",{}).get("edition")
         if game not in games:
             continue
+        if result.get("repeatability",{}).get("accepted") is False:
+            raise ValueError("Unstable measurement in lab campaign")
         if result.get("idle",{}).get("state")=="busy":
             raise ValueError("Busy host in lab campaign")
         public=scores.public_fields(result,"Personal ROM")

@@ -183,3 +183,5 @@ Use the mgba-perf or duckstation subcommand with --runner PATH and --rom PATH. D
 Carter Circuit v2 adds 64 translucent objects on GBA and four layers with pseudo-hires color math on SNES. Hard must run at least 10% slower than normal in the three-pass workload check on mGBA, Snes9x and bsnes. Run tests/scene_load.py with an emulator ID and core path. Revisions use separate comparison groups. A CartsSNES build that misses a reference checkpoint records a failed scene.
 
 Every scored run samples aggregate CPU use for 350 ms before timing. At 25% utilization or higher the run is flagged busy and excluded from rankings. Campaigns additionally monitor their configured idle gate. This preflight measures CPU contention; it does not assert exclusive physical access.
+
+One score now starts three fresh emulator processes. We select the pass with median unrounded throughput and show its trace and whole-number FPS. Relative spread = (fastest − slowest) / median. Spreads above 10% are stored locally and rejected for public scoring. Each local receipt includes all three measured durations. The same rule applies to standalone process timing.

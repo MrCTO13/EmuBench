@@ -174,7 +174,7 @@ export default {async fetch(request,env) {
   if(path.startsWith("/assets/")) {
     const name=path.slice(8);
     if(Object.hasOwn(ASSETS,name)) {
-      const type=name.endsWith(".png")?"image/png":name.endsWith(".ttf")?"font/ttf":"text/plain";
+      const type=name.endsWith(".png")?"image/png":name.endsWith(".woff2")?"font/woff2":"text/plain";
       return new Response(Uint8Array.from(atob(ASSETS[name]),c=>c.charCodeAt(0)),{headers:{"content-type":type}});
     }
   }

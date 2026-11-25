@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Compare emulator speed, frame timing and accuracy checks for matched games and hardware. Download EmuBench for macOS, Windows and Linux.">
-  <meta name="theme-color" content="#101d30">
+  <meta name="description" content="Look up a game, compare emulator speeds and inspect individual frames. EmuBench runs on Mac, Windows and Linux.">
+  <meta name="theme-color" content="#111e36">
   <title>EmuBench · Emulator benchmarks</title>
   <style>__STYLES__</style>
 </head>
@@ -25,12 +25,19 @@
   <section class="lead">
     <div class="heading">
       <h1 id="title">Emulator benchmarks</h1>
-      <p id="intro">Search by game to compare emulator speed, frame timing and accuracy on the same hardware.</p>
+      <p id="intro">See how fast a game runs, where frame rates dip, and which accuracy checks pass.</p>
       <div id="search"></div>
     </div>
     <a class="feature" href="/library#carter" hidden>
-      <img src="/assets/sunspill-orchard.png" alt="Carter dashing over the treetops in Sunspill Orchard" width="768" height="670">
-      <span><b>Super Carter Bros. 3</b><small>SNES · Carter game collection</small></span>
+      <span class="cart-shell">
+        <span class="cart-grip" aria-hidden="true"></span>
+        <span class="cart-label">
+          <img src="/assets/sunspill-orchard.png" alt="" width="768" height="670">
+          <span class="label-type"><b>Super Carter Bros.&nbsp;3</b><small>Super NES</small></span>
+        </span>
+        <span class="cart-connector" aria-hidden="true"></span>
+      </span>
+      <span class="sr">View the Carter game collection</span>
     </a>
   </section>
   <div id="controls"></div>
@@ -39,8 +46,8 @@
   <noscript>Enable JavaScript to search results and inspect frame timings.</noscript>
 </main>
 <footer>
-  <div><b>EmuBench</b><span>Open-source emulator benchmark</span></div>
-  <div><a href="/method">Methodology</a><a href="/?demo=1">Example data</a><a href="__SOURCE__">Source code</a></div>
+  <div><b>EmuBench</b></div>
+  <div><a href="/method">Methodology</a><a href="/?demo=1">Sample scores</a><a href="__SOURCE__">Source code</a></div>
 </footer>
 <script src="/client.js" defer></script>
 </body>

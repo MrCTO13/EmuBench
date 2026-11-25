@@ -3,7 +3,7 @@ const route=location.pathname.split("/")[1]||"browse", params=new URLSearchParam
 const demo=params.get("demo")==="1";
 function localUrl(path){return demo?path+(path.includes("?")?"&":"?")+"demo=1":path;}
 if(demo){
-  const note=document.createElement("p");note.className="demo";note.append("Example scores are fictional. ");
+  const note=document.createElement("p");note.className="demo";note.append("The scores in this demo are fictional. ");
   const live=document.createElement("a");live.textContent="View published scores";live.href="/";note.append(live);document.getElementById("notice").append(note);
   for(const a of document.querySelectorAll("nav a"))if(!a.search)a.href=localUrl(a.pathname);
 }
@@ -32,6 +32,7 @@ function table(headers,rows,caption) {
 }
 function go(){location.href=localUrl("/compare?"+new URLSearchParams({q:q.value,emulators:[...checked()].join(",")}));}
 function info(heading,copy){title.textContent=heading;intro.textContent=copy;document.title=heading+" · EmuBench";}
+function buildLabel(id){return demo?id.split(" · ")[0]:id;}
 function speedLabel(r){return Number.isFinite(r.speed_x)?r.speed_x.toFixed(2)+'×':'Unscored';}
 function list(rows){
   return table(["Game / scene","Emulator","Console speed","Accuracy","Average FPS","1% low","1% high","Device"],rows.map(r=>[
@@ -46,7 +47,7 @@ function empty(message,action){
   out.append(block);
 }
 async function get(path){const res=await fetch(path);if(!res.ok)throw Error(res.status===404?"This score could not be found.":"Scores are temporarily unavailable.");return res.json();}
-const q=make("input"),checks=[],mode=make("select");q.type="search";q.name="q";q.value=params.get("q")||"";q.placeholder="Enter a game or ROM name";
+const q=make("input"),checks=[],mode=make("select");q.type="search";q.name="q";q.value=params.get("q")||"";q.placeholder="e.g. Star Fox";
 function checked(){return checks.filter(c=>c.checked).map(c=>c.value);}
 function selectOption(el,value,label){const o=make("option",label);o.value=value;el.append(o);}
 function filters() {
@@ -73,7 +74,7 @@ async function score() {
   const id=location.pathname.split("/")[2];info("Run details","");const r=demo?demoRows().find(row=>row.run_id===id):await get("/api/run/"+id);if(!r)throw Error("Example score not found.");info(r.game,r.emulator+" "+(r.version||"")+" · "+r.cpu+" · "+r.os+" "+r.arch+(r.execution?" · x64 on ARM64":""));
   if(r.outcome==="failed"){out.append(make("p","This scene failed during "+r.reason+". No FPS was scored."),link("View campaign","/campaign/"+r.campaign_id));return;}
   const cards=make("div",null,"cards");for(const [label,field] of [["Console speed","speed_x"],["Average FPS","average_fps"],["1% low FPS","low_1pct_fps"],["1% high FPS","high_1pct_fps"]]){const el=make("div",label);el.append(make("strong",field==="speed_x"?speedLabel(r):(r[field]??"Unavailable")));cards.append(el);}out.append(make("p","Accuracy · "+conformance(r).label),cards);if(r.timing)out.append(make("h2","Frame timing"));
-  if(r.timing){const chart=make("div");out.append(chart);drawTiming(chart,r.timing);}else out.append(make("p","External process time includes startup, software rendering and exit. This runner reports aggregate throughput."));
+  if(r.timing){const chart=make("div");out.append(chart);drawTiming(chart,r.timing);}else out.append(make("p","This runner times the whole process, from startup through rendering to exit. It reports one average."));
   const items=[["Repeatability",r.repeatability?.relative_spread!==undefined?"Three passes · "+(100*r.repeatability.relative_spread).toFixed(1)+"% spread":"Unrecorded"],["Host load",r.idle?r.idle.state+" ("+r.idle.cpu_percent+"% CPU before timing)":"Unknown"],["Runner",r.mode||"Legacy libretro"],["Video timing",r.video_mode?r.video_mode.region+" · "+r.video_mode.refresh_hz+" Hz ("+r.video_mode.source+")":"Unrecorded"],["Workload",r.profile],["Rendered frames",r.rendered_frames],["Warm-up frames",r.warmup_frames],["Submitted",new Date(r.received*1000).toISOString()],["Core SHA-256",r.core_sha256],["Worker SHA-256",r.worker_sha256]];
   if(r.hardware){const h=r.hardware;items.push(["Model",h.model||"Unavailable"],["RAM",Math.round(h.ram_bytes/2**30)+" GiB"],["OS build",h.os_build],["Physical CPU cores",h.physical_cores??"Unavailable"],["Core types",Object.entries(h.core_types).map(([k,v])=>v+" "+k).join(", ")||"Unavailable"],["GPU",h.gpu.join(", ")||"Unavailable"]);}
   for(const [i,w] of (r.conditions||[]).entries()){
@@ -88,10 +89,25 @@ async function score() {
   out.append(make("h2","Run details"),table(["Field","Value"],items.map(([k,v])=>[k,v instanceof Node?v:String(v)])));
   if(!demo && r.profile.includes("-circuit-"))out.append(make("p","Repeat using the matching local core"),make("code","emubench suite --emulator "+r.emulator.toLowerCase()+" --scene "+r.profile.split("-")[2]+" --core PATH --expect-core "+r.core_sha256+" --expect-worker "+r.worker_sha256));
 }
-function method(){info("Methodology","Carter Circuit v2 covers six deterministic scenes across Game Boy Advance and Super NES.");out.append(make("h2","What an FPS score measures"),make("p","The external native worker warms up for 120 console frames, times 600 uncapped frames with a monotonic clock, and requires one complete software framebuffer on every measured frame. Two untimed checkpoints verify the scene. The shortest reliable window for game libraries is still being calibrated."),make("p","Console speed is unrounded throughput divided by the loaded console mode’s refresh rate. The run records the region and rate. Average FPS is frame count divided by elapsed time. The 1% low and high are the reciprocals of the 99th and 1st frame-time percentiles. The details page shows each interval’s slowest frame."),make("h2","Comparison rules"),make("p","For SNES rankings, each device needs both builds on easy, normal and hard. Take the median FPS per scene and build. Weight the three performance ratios equally using a geometric mean, then take the median across installations. Show a 95% device-bootstrap interval from five installations. Missing scenes and device groups with reported scene failures are excluded. The table shows completion coverage and the reported failure count. Every submission is self-reported. Public installations and completed runs alone cannot establish an independent laboratory or a game compatibility rate."),make("h2","Accuracy"),make("p","Report each named diagnostic as passed, failed or unresolved. A pass rate applies only to the listed checks. Headless frame delivery excludes physical display, speaker and controller latency."),link("Read the workload source","https://github.com/MrCTO13/EmuBench/blob/d9289f7c1625a920b7dad006d5b06fd3769ed036/emubench/circuit.py"));}
+function method(){
+  info("Methodology","Carter Circuit has three repeatable scenes on Game Boy Advance and three on Super NES.");
+  out.append(
+    make("h2","How a run works"),
+    make("p","The timing worker warms up each scene for 120 console frames, then times 600 frames at full speed. It uses a monotonic clock and requires a complete software frame every time. We check two reference images outside the timed section. We’re still testing how short a run can be for larger game libraries."),
+    make("h2","Reading a score"),
+    make("p","Console speed compares measured FPS with the console’s refresh rate for that region. A score of 2× means the emulator ran twice as fast as the original console. We calculate it before rounding the displayed FPS."),
+    make("p","Average FPS is the frame count divided by elapsed time. The 1% low comes from the 99th percentile of frame times and the 1% high from the 1st percentile. We convert both to FPS. Open a run to see the slowest frame in each interval."),
+    make("h2","How the SNES rankings work"),
+    make("p","We compare two builds on the same device across easy, normal and hard scenes. For each scene we take the median FPS for each build, then compare them. The three speed ratios carry equal weight in a geometric mean. The ranking reports the median across installations."),
+    make("p","With five or more installations we also show a 95% bootstrap interval, resampling by installation. We exclude groups with a missing scene or a reported scene failure. The table lists the coverage and failures. Community results come from players’ own machines."),
+    make("h2","What the accuracy checks cover"),
+    make("p","Each named test gets a pass, fail or unresolved result. The pass count covers only the tests listed for that run. Display, speaker and controller latency need separate hardware tests."),
+    link("Read the Carter Circuit source","https://github.com/MrCTO13/EmuBench/blob/d9289f7c1625a920b7dad006d5b06fd3769ed036/emubench/circuit.py")
+  );
+}
 async function browse(){
   const heading={browse:"Emulator benchmarks",campaign:"Campaign scores",compare:"Compare results",rankings:"Emulator rankings",history:"Version history"}[route];
-  info(heading,{browse:"Search by game to compare emulator speed, frame timing and accuracy on the same hardware.",campaign:"Published results from this campaign.",compare:"Match identical workloads across emulators or devices.",rankings:"Controlled lab studies and community comparisons.",history:"Track emulator builds on the same installation, scene and timing worker."}[route]);
+  info(heading,{browse:"See how fast a game runs, where frame rates dip, and which accuracy checks pass.",campaign:"All the runs published from this batch.",compare:"Compare two emulators on the same device, or one emulator across devices.",rankings:"See the lab results and how emulator builds compare in community runs.",history:"See what changed between builds tested on the same machine and scene."}[route]);
   if(route==="browse"){
     document.querySelector(".lead").classList.add("home");
     document.querySelector(".feature").hidden=false;
@@ -114,35 +130,41 @@ async function browse(){
   function render(){
     out.replaceChildren();const filtered=rows.filter(r=>checked().includes(r.emulator));
     if(route==="compare"){
-      const groups=comparison(filtered,mode.value);if(!groups.length)empty("No matched pair for these filters yet.");
+      const groups=comparison(filtered,mode.value);if(!groups.length)empty("No two runs match this selection yet.");
       for(const g of groups){
         const bars=make("ul",null,"bars"),sets=group(g,mode.value==="devices"?device:build);
         const values=[...sets.values()].map(rs=>[mode.value==="devices"?rs[0].cpu+" · "+rs[0].os:build(rs[0]),median(rs.map(r=>r.speed_x)),accuracyGroup(rs)]);
         const max=Math.max(1,...values.map(row=>row[1]));
-        for(const [label,fps,accuracy] of values.filter(v=>Number.isFinite(v[1]))){const li=make("li",label+" · "+fps.toFixed(2)+"× · "+accuracy),bar=make("meter");bar.max=max;bar.value=fps;bar.setAttribute("aria-label",label);li.append(bar);bars.append(li);}
+        for(const [label,speed,accuracy] of values.filter(v=>Number.isFinite(v[1]))){
+          const li=make("li"),heading=make("div",null,"bar-heading"),reading=make("span",null,"bar-reading");
+          const name=mode.value==="devices"?label:buildLabel(label);
+          reading.append(make("strong",speed.toFixed(2)+"×")," · "+accuracy);
+          heading.append(make("b",name),reading);
+          const bar=make("meter");bar.max=max;bar.value=speed;bar.setAttribute("aria-label",name);li.append(heading,bar);bars.append(li);
+        }
         out.append(make("h2",g[0].game),make("p",mode.value==="devices"?g[0].emulator+" "+g[0].version:g[0].cpu+" · "+g[0].os,"note"),bars,list(g));
       }
     }else if(route==="rankings"){
-      studyPanel();out.append(make("h2","Community Carter Circuit scores"),make("p","Matched SNES scenes require 5/5 CPU, audio and coprocessor checks, idle passes and accepted spread."));
+      studyPanel();out.append(make("h2","Community SNES rankings"),make("p","Each build must pass all five checks on an idle machine and finish within the three-pass timing limit."));
       const builds=[...new Set(filtered.filter(r=>!r.outcome && r.profile.startsWith("snes-circuit-")).map(build))].sort();
-      if(builds.length<2){empty("Rankings need two builds with matched SNES scenes. No eligible pair yet.");return;}
-      const a=make("select"),b=make("select");for(const v of builds){selectOption(a,v,v);selectOption(b,v,v);}b.selectedIndex=1;
+      if(builds.length<2){empty("No two builds have a full set of matching SNES runs yet.");return;}
+      const a=make("select"),b=make("select");for(const v of builds){selectOption(a,v,buildLabel(v));selectOption(b,v,buildLabel(v));}b.selectedIndex=1;
       const l=make("label","Baseline"),m=make("label","Compare with");l.append(a);m.append(b);const panel=make("div",null,"tools"),result=make("div");panel.append(l,m);out.append(panel,result);
       function compare(){result.replaceChildren();if(a.value===b.value)return;const r=ranking(filtered,a.value,b.value);result.append(make("p",r.completed+" complete paired device/protocol groups out of "+r.eligible+" observed · "+r.failed+" reported failed attempts for the selected builds."));result.append(make("p",r.n?Math.round(100*r.ratio)+"% of baseline · "+r.n+" matched installations"+(r.interval?" · 95% interval "+r.interval.map(x=>Math.round(100*x)+"%").join(" to "):" · interval requires five installations"):"No complete matched suites."));if(r.matched.length){
-          const bars=make("ul",null,"bars");for(const [name,ratio] of [[a.value,1],[b.value,r.ratio]]){const li=make("li",name+" · "+Math.round(ratio*100)+"%");const bar=make("meter");bar.min=0;bar.max=Math.max(1,r.ratio)*1.1;bar.value=ratio;bar.setAttribute("aria-label",name);li.append(bar);bars.append(li);}result.append(bars,list(r.matched));
+          const bars=make("ul",null,"bars");for(const [name,ratio] of [[a.value,1],[b.value,r.ratio]]){const li=make("li",buildLabel(name)+" · "+Math.round(ratio*100)+"%");const bar=make("meter");bar.min=0;bar.max=Math.max(1,r.ratio)*1.1;bar.value=ratio;bar.setAttribute("aria-label",name);li.append(bar);bars.append(li);}result.append(bars,list(r.matched));
         }}a.onchange=b.onchange=compare;compare();
     }else if(route==="history"){
       const cohorts=[...group(filtered.filter(r=>r.device_id && !r.outcome),r=>[device(r),workload(r),r.worker_sha256,r.emulator].join("|")).values()].filter(g=>group(g,build).size>1);
-      if(!cohorts.length)empty("Version history needs two builds on the same device and scene.");
+      if(!cohorts.length)empty("Run two builds on the same device and scene to see the change here.");
       for(const g of cohorts){out.append(make("h2",g[0].game+" · "+g[0].emulator));const versions=[...group(g.sort((a,b)=>a.received-b.received),build)];let prev=null;
-        out.append(table(["Build","First submitted (UTC)","Accuracy","Median speed","Raw FPS","Change","Samples"],versions.map(([ver,rs])=>{const fps=median(rs.map(r=>r.average_fps));const change=prev?Math.round(100*(fps/prev-1))+"%":"—";prev=fps;return [link(ver,"/run/"+rs[0].run_id),new Date(rs[0].received*1000).toISOString().slice(0,10),accuracyGroup(rs),speedLabel({speed_x:median(rs.map(r=>r.speed_x))}),String(Math.round(fps)),change,String(rs.length)];})));}
+        out.append(table(["Build","First submitted (UTC)","Accuracy","Median speed","Raw FPS","Change","Samples"],versions.map(([ver,rs])=>{const fps=median(rs.map(r=>r.average_fps));const change=prev?Math.round(100*(fps/prev-1))+"%":"—";prev=fps;return [link(buildLabel(ver),"/run/"+rs[0].run_id),new Date(rs[0].received*1000).toISOString().slice(0,10),accuracyGroup(rs),speedLabel({speed_x:median(rs.map(r=>r.speed_x))}),String(Math.round(fps)),change,String(rs.length)];})));}
     }else{
       out.append(make("h2",demo?"Example runs":q.value?"Search results":"Published runs"));
       if(filtered.length)out.append(list(filtered));
       else if(!demo&&!q.value&&!rows.length&&route==="browse"){
-        empty("The first public run will appear here.",link("Explore a sample comparison","/compare?q=Super+Mario+World&demo=1"));
+        empty("No public runs yet.",link("See a sample Mario World comparison","/compare?q=Super+Mario+World&demo=1"));
         const start=make("section",null,"first-run");
-        start.append(make("h3","Benchmark Cartervania"),make("p","After downloading the CLI, run the GBA replay with mGBA. The result is saved on your device."),make("code","emubench carter --emulator mgba --scene normal"));
+        start.append(make("h3","Benchmark Cartervania"),make("p","Run the included Game Boy Advance replay with mGBA. Your result stays on this device until you share it."),make("code","emubench carter --emulator mgba --scene normal"));
         out.append(start);
       }else{
         empty("No scores match these filters.",link("Clear filters","/"));

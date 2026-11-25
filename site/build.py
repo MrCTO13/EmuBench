@@ -14,7 +14,7 @@ profiles = {s.profile: dict(console=s.console, title=s.title, description=s.desc
 page = (root / "index.html").read_text()
 page = page.replace("__EMU__", (root / "assets/emu-bench-wordmark.svg").read_text())
 page = page.replace("__STYLES__", (root/"styles.css").read_text()).replace("__RELEASE__", "https://github.com/MrCTO13/EmuBench/releases/tag/v0.8.0-rc.1").replace("__SOURCE__", "https://github.com/MrCTO13/EmuBench/tree/d9289f7c1625a920b7dad006d5b06fd3769ed036")
-assets = {p.name: base64.b64encode(p.read_bytes()).decode("ascii") for p in (root/"assets"/n for n in ["sunspill-orchard.png","barlow-semibold.ttf","barlow-license.txt"])}
+assets = {p.name: base64.b64encode(p.read_bytes()).decode("ascii") for p in (root/"assets"/n for n in ["sunspill-orchard.png","bricolage.woff2","bricolage-license.txt","dm-sans.woff2","dm-sans-license.txt"])}
 registry = {"studies":lab.studies(),"receipts":[]}
 for path in sorted((root/"reviewed").glob("*.json")):
     receipt=json.loads(path.read_text())

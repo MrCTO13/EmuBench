@@ -8,9 +8,9 @@ function studyPanel() {
   function render(){
     const s=LAB.studies.find(x=>x.id===select.value);
     const all=s.groups.flatMap(g=>g.games),N=s.groups.reduce((n,g)=>n+g.population,0);
-    panel.replaceChildren(make("p",all.length+" USA editions sampled from "+N+" eligible catalog entries. Six editions per cartridge-size quartile. Each run measures "+s.frames+" uncapped boot frames after "+s.warmup+" warm-up frames, without controller input."));
+    panel.replaceChildren(make("p",all.length+" USA editions sampled from "+N+" games in the catalog. The sample has six games from each of four cartridge-size groups. We time "+s.frames+" uncapped frames from startup after "+s.warmup+" warm-up frames. No buttons are pressed."));
     const receipts=LAB.receipts.filter(r=>r.study===s.id);
-    if(!receipts.length)panel.append(make("p","Awaiting the first reviewed, complete lab campaign. No verified FPS yet.","empty"));
+    if(!receipts.length)panel.append(make("p","No lab results have been reviewed for this console yet.","empty"));
     for(const r of receipts){
       panel.append(make("h3",r.host.cpu+" · "+r.host.os+" "+r.host.arch),make("p",r.gate+" · "+r.campaign));
       const ranking=[];

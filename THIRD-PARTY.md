@@ -14,6 +14,6 @@ Carter Circuit and the SA-1 and Super FX probe programs and graphics in this rep
 
 The optional Game Boy Color checks fetch Matt Currie's cgb-acid2 v1.1, two Mealybug Tearoom PPU timing tests, and five CGB sound tests written by Blargg from their upstream locations at run time. The CLI ships their identities and expected-result checks. See [STUDIES.md](STUDIES.md) for credits and reference images. The sample manifest uses public No-Intro metadata from the pinned Libretro Database revision recorded in each study.
 
-The scoreboard uses Barlow Semi Condensed under the SIL Open Font License. Its notice is in site/assets/barlow-license.txt. The Sunspill Orchard image is original Super Carter Bros. 3 gameplay from the owner’s published game gallery.
+The scoreboard uses Bricolage Grotesque and DM Sans under the SIL Open Font License. Both notices are included in site/assets. The Sunspill Orchard image is original Super Carter Bros. 3 gameplay from the owner’s published game gallery.
 
 EmuBench verifies signed Libretro core downloads with the public production keys and RACSIG01 format from [RetroArch’s signing tools](https://github.com/libretro/RetroArch/blob/b20beba47a1683f3ac2650a90eb2f603247956e2/tools/core_sign.py). Desktop archives carry the Python ECDSA and Six license notices.

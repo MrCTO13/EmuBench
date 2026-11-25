@@ -39,22 +39,22 @@ def main():
 
         queue = work/"folder.sqlite"
         created = cli("campaign","create",queue,"--rom-dir",library,"--frames","120","--dedicated")
-        assert "3 jobs" in created and "1 duplicate" in created, created
+        assert "4 jobs" in created and "1 duplicate" in created, created
         cli("uploads","enable","--destination","github",offline=True)
         cli("campaign","resume",queue,offline=True)
         cli("campaign","resume",queue,offline=True)
-        assert "done: 3" in cli("campaign","status",queue,offline=True)
+        assert "done: 4" in cli("campaign","status",queue,offline=True)
         with closing(sqlite3.connect(home/"history.sqlite")) as db:
             records = [json.loads(row[0]) for row in db.execute("SELECT payload FROM score_outbox")]
-        assert len(records)==3
-        assert {r["emulator"] for r in records}=={"mGBA","Snes9x","bsnes"}
+        assert len(records)==4
+        assert {r["emulator"] for r in records}=={"mGBA","gpSP","Snes9x","bsnes"}
         assert all(r["rendered_frames"]==120 and r["game"]=="Personal ROM" for r in records)
         assert "Private " not in json.dumps(records) and str(work) not in json.dumps(records)
         with closing(sqlite3.connect(queue)) as db:
             results = [json.loads(row[0]) for row in db.execute("SELECT result FROM jobs")]
         assert all(r["sampled_frame_changes"]>0 for r in results)
         assert {r["local_name"] for r in results}=={"Private GBA.GBA","Private SNES.smc"}
-        print("Three native measurements from a nested mixed library, all three upload summaries and restart verified.")
+        print("Four native measurements from a nested mixed library, all four upload summaries and restart verified.")
 
 
 if __name__ == "__main__":

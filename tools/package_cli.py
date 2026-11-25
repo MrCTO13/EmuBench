@@ -8,6 +8,8 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from emubench import engines
+from emubench.catalog import host_target
 from emubench.engines import worker
 from emubench.details import template_html
 
@@ -15,8 +17,16 @@ native = worker()
 entry = Path("build/entry.py")
 entry.parent.mkdir(exist_ok=True)
 entry.write_text("from emubench.cli import main\nraise SystemExit(main())\n", encoding="utf-8")
+extra=[]
+if host_target()=="windows-arm64":
+    cross=Path("build/worker-x64").resolve()
+    engines.compile_target(engines.NATIVE,cross,"emubench-worker",["-A","x64"])
+    named=Path("build/emubench-worker-x64.exe")
+    shutil.copy2(engines.artifact(cross,"emubench-worker.exe"),named)
+    extra=["--add-binary",str(named)+os.pathsep+"emubench/native/bin"]
 subprocess.run([sys.executable, "-m", "PyInstaller", "--onefile", "--clean", "--noconfirm",
-                "--paths", ".", "--name", "emubench",
+                *extra, "--paths", ".", "--name", "emubench",
+                "--add-data", "emubench/studies.json" + os.pathsep + "emubench",
                 "--add-data", "emubench/desktop.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/report.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/chart.js" + os.pathsep + "emubench",

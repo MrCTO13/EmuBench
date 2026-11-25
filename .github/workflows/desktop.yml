@@ -110,6 +110,14 @@ jobs:
             ./dist/emubench accuracy --emulator "$emulator" --out "$RUNNER_TEMP/$emulator-checks.json" || test "$?" = 1
           done
           python -c "import os,json,pathlib; base=pathlib.Path(os.environ['RUNNER_TEMP']); results=[json.loads((base/(key+'-checks.json')).read_text()) for key in ('mgba','snes9x','bsnes')]; assert [len(r['checks']) for r in results]==[3,2,2]; assert all(r['suite']=='cpu-memory-v1' and all(c in ('pass','fail') for c in r['checks'].values()) for r in results)"
+      - name: Check the upstream Game Boy Color LCD and APU diagnostics on actual cores
+        shell: bash
+        run: |
+          ./dist/emubench study list --console snes
+          for peer in sameboy gambatte; do
+            ./dist/emubench accuracy --emulator "$peer" --out "$RUNNER_TEMP/$peer-gbc.json"
+          done
+          python -c "import json,os,pathlib; d=pathlib.Path(os.environ['RUNNER_TEMP']); assert all(list(json.loads((d/(p+'-gbc.json')).read_text())['checks'].values())==['pass']*6 for p in ('sameboy','gambatte'))"
       - name: Interrupt and resume 1001 real measurements with an offline test service
         if: matrix.platform == 'linux-x64'
         run: python tests/soak_campaign.py

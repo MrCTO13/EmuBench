@@ -80,17 +80,23 @@ def verdict(console, photo):
 
 
 def validated(data, console, core_sha, worker_sha):
-    if not isinstance(data, dict) or (data.get("suite"),data.get("core_sha256"),data.get("worker_sha256")) != (VERSION,core_sha,worker_sha):
+    from . import color_checks
+    version="gbc-v1" if console=="gbc" else VERSION
+    names=color_checks.CHECKS if console=="gbc" else CHECKS.get(console,{})
+    if not names or not isinstance(data, dict) or (data.get("suite"),data.get("core_sha256"),data.get("worker_sha256")) != (version,core_sha,worker_sha):
         raise ValueError("Accuracy record does not match the selected build")
     cases = data.get("checks")
-    if not isinstance(cases,dict) or set(cases) != set(CHECKS[console]) or any(
+    if not isinstance(cases,dict) or set(cases) != set(names) or any(
             label not in ("pass","fail","unresolved") for label in cases.values()):
         raise ValueError("Incomplete accuracy record")
-    return {"suite":VERSION,"core_sha256":core_sha,"worker_sha256":worker_sha,
-            "checks":{name:cases[name] for name in CHECKS[console]}}
+    return {"suite":version,"core_sha256":core_sha,"worker_sha256":worker_sha,
+            "checks":{name:cases[name] for name in names}}
 
 
 def run(emulator, core, refresh=False):
+    if emulator in ("sameboy","gambatte"):
+        from . import color_checks
+        return color_checks.run(emulator, core)
     console = "gba" if emulator == "mgba" else "snes"
     worker = engines.worker()
     core_sha, worker_sha = engines.digest(core), engines.digest(worker)

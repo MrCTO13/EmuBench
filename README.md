@@ -153,3 +153,21 @@ Freeze the catalog revision, ROM editions, peer builds, viewport, region, audio 
 For a console-wide gameplay claim, define the population and deduplicate regional revisions according to a published rule. Stratify ordinary titles by mapper or hardware family. List rare enhancement hardware ahead of time and include those cases deliberately. Draw randomly within strata with a published seed. Estimate the number of titles from the variability of paired log performance ratios in the pilot and a declared precision target. A fixed number of popular games alone cannot estimate the full library. Weight each stratum by its population for a library-wide estimate. A census removes title sampling uncertainty but still needs representative scenes, repeated-device checks and explicit coverage for failures. Report the fraction of eligible titles that completed and publish per-title rows alongside the estimate. The Carter synthetic score has its own fixed equal-scene weighting.
 
 The live game coverage page lists candidate commercial titles and emulator projects per console. Current measurement adapters cover GBA and SNES. Other downloaded emulator packages need a validated timing adapter before they can produce scores.
+
+## Multi-console benchmarking
+
+`emubench emulators` lists the complete third-party shortlist and timing routes. Use `emubench download --all --channel bench` to prefetch the timing cores and the DuckStation desktop package. Use `--list-only` to inspect the selection first. Cross-platform snapshots depend on upstream availability. Windows on Arm uses native cores where available and an isolated x64 worker for x64-only builds. Public results identify translated runs.
+
+    emubench bench "/path/to/ROMs" --queue library.sqlite --dedicated
+    emubench campaign resume library.sqlite
+    emubench run --emulator sameboy --rom "/path/to/game.gbc" --checks
+    emubench accuracy --emulator gambatte
+    emubench study list --console snes
+
+Use `--dedicated` on a reserved machine, or pass `--idle-check PATH`. macOS can use its existing idle gate. The bench command downloads the compatible timing builds, pins their digests for the queue, and scans nested folders and cartridge ZIP members. A failed installation is recorded beside its jobs while working peers continue. Use a new queue to resolve a newer set of builds.
+
+Supported routes include NES, SNES, GB, GBC, GBA, Master System, Game Gear, Mega Drive/Genesis, 32X, Atari 2600, PC Engine, SuperGrafx, PlayStation and arcade. Use unambiguous cartridge extensions. For PlayStation CHD/PBP/PS-X EXE select `--emulator pcsx-rearmed`. For arcade set ZIPs select `--emulator arcade` in bench or a single arcade peer. Use complete non-merged sets. Point `--system-dir` at locally supplied firmware when needed. Timing requires a completed software framebuffer per measured frame. Incomplete measurements and emulator startup errors do not earn scores.
+
+DuckStation has a separate measurement protocol. The desktop downloader covers it; its upstream regression executable can be supplied with `emubench duckstation --runner PATH --rom IMAGE --system-dir BIOS_DIR`. The local report stores its average FPS and counts rendered checkpoints. The standard score board requires individual frame timings, which this executable does not export. It may need to be built separately from the upstream project.
+
+See the [frozen samples, verified rankings and accuracy evidence](STUDIES.md).

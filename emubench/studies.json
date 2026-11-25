@@ -1,0 +1,268 @@
+[
+  {
+    "id": "snes-us-boot-v1",
+    "console": "snes",
+    "catalog_commit": "f89f09cbe13f9f7863ecf20d0ebf2c5ce53be029",
+    "warmup": 120,
+    "frames": 1800,
+    "groups": [
+      {
+        "population": 171,
+        "min_bytes": 262144,
+        "max_bytes": 1048576,
+        "games": [
+          {
+            "title": "Miracle Piano Teaching System, The (USA)",
+            "edition": "cacd45ff76f38158270ac55931deae490941489d3493eb0b97c061fa7d2575e3"
+          },
+          {
+            "title": "Super Soccer Champ (USA)",
+            "edition": "ef61eb730e5989fb8764eb7402234f41a15b275448370db968bb59b09d495367"
+          },
+          {
+            "title": "Bebe's Kids (USA)",
+            "edition": "0b8382225973fa2d19f4162495ebea72bb3e4826f8792ecfc2db04c5fea2d2b6"
+          },
+          {
+            "title": "Race Drivin' (USA)",
+            "edition": "337ffba7bed396c8daeb8cb1d53dbd1af5aa00e6d448bb6665f17a74e4821260"
+          },
+          {
+            "title": "Addams Family, The (USA)",
+            "edition": "6d25e5602c12829143add7d1fa2ed39e45e2277b154fbb5614b0c03acdadf996"
+          },
+          {
+            "title": "Ka-blooey (USA)",
+            "edition": "9d52cb1af31b740671dc7113e6fa9fb3213eef6cb4d2d9252955a3b3d10cc6db"
+          }
+        ]
+      },
+      {
+        "population": 172,
+        "min_bytes": 1048576,
+        "max_bytes": 1048576,
+        "games": [
+          {
+            "title": "Gemfire (USA)",
+            "edition": "eaa8a4df0d42a12b494d0a12cbd292a9f2660f39622448d9a36597a8e0d42a3d"
+          },
+          {
+            "title": "Joe & Mac (USA)",
+            "edition": "e8920d9ea397d57b2ac78c5940e2e9d6c8257c09f9304c6a1741895a27b42bbb"
+          },
+          {
+            "title": "Hyper V-Ball (USA)",
+            "edition": "0ea3aeaa12008eb4e0ceb8c541bc9ada91ec3edcaf53f8856d901248003c8642"
+          },
+          {
+            "title": "Sporting News, The - Baseball (USA)",
+            "edition": "517682acd88e9ad04942efa80dd8528d7f5c3ea3bdeb8609f6cfb837eeb2f532"
+          },
+          {
+            "title": "Kawasaki Superbike Challenge (USA)",
+            "edition": "7412cc3bf94e301987932238689dd078c7df166dab46596023d719eabdaea101"
+          },
+          {
+            "title": "Madden NFL 95 (USA)",
+            "edition": "8efe4daede0aa1dae0169ef320dee970302f3686d86b336298cac9dc33c3a4ea"
+          }
+        ]
+      },
+      {
+        "population": 171,
+        "min_bytes": 1048576,
+        "max_bytes": 2097152,
+        "games": [
+          {
+            "title": "Castlevania - Dracula X (USA)",
+            "edition": "661f31080ea13f21205fdefdda19649ec4f6b8336dfa1003e3057d7e887e55a0"
+          },
+          {
+            "title": "Capcom's Soccer Shootout (USA)",
+            "edition": "e6f9d2927e66996ba3cfb6d1232b90eaa996282b19a196897b3d4b2f39805c2b"
+          },
+          {
+            "title": "Brutal - Paws of Fury (USA)",
+            "edition": "0a75c7ae87156549d78114347ebf7e42b94e5d8cc259330c003a9611823746ca"
+          },
+          {
+            "title": "Time Trax (USA)",
+            "edition": "76e14b9b7e7c0d57840cc493120072b4a95b5d65d8ae3049066be5cc58ec4e07"
+          },
+          {
+            "title": "Knights of the Round (USA)",
+            "edition": "7b8aac2d2aeaf7001d50a906797cc935575574df660d800e0bb09fb170d8b714"
+          },
+          {
+            "title": "Super High Impact (USA)",
+            "edition": "a9f318aa91ee5c8740410e438b95d8eebf92525c2f27add62b30b5e73d7580be"
+          }
+        ]
+      },
+      {
+        "population": 172,
+        "min_bytes": 2097152,
+        "max_bytes": 4194304,
+        "games": [
+          {
+            "title": "CutThroat Island (USA)",
+            "edition": "79eea059be3cadbf37978b9f9e4b0605c9addbd71a50b1f9e7dc1fc9abb38957"
+          },
+          {
+            "title": "NBA Give 'n Go (USA)",
+            "edition": "c2337c6a3a55de33125ff96c315820c19bcf5f5df357313b4b52ed2af9abec9f"
+          },
+          {
+            "title": "Metal Warriors (USA)",
+            "edition": "f3a360e021bbee06149e76117081873a812166bb7aaf667481d06d4eadfbc46f"
+          },
+          {
+            "title": "Clay Fighter 2 - Judgment Clay (USA)",
+            "edition": "c45ca76409213deaa5df5ab190856dac2676140a16313f6d7e096f995611b003"
+          },
+          {
+            "title": "Zero the Kamikaze Squirrel (USA)",
+            "edition": "d9dca81e5e719ee7d5c945f506db1bd61eabfdbecbf4ffb62c7a2ae386d58603"
+          },
+          {
+            "title": "Revolution X (USA)",
+            "edition": "b954f31371c9a94ab78a1d6dc2607da23dc0d151c402bf94b495dd43de52ff01"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gba-us-boot-v1",
+    "console": "gba",
+    "catalog_commit": "f89f09cbe13f9f7863ecf20d0ebf2c5ce53be029",
+    "warmup": 120,
+    "frames": 1800,
+    "groups": [
+      {
+        "population": 154,
+        "min_bytes": 1048576,
+        "max_bytes": 4194304,
+        "games": [
+          {
+            "title": "Gradius Galaxies (USA)",
+            "edition": "9518f1073773fbeb11d6284b7f14a1312a5545e62ad7c338b67fe0d635c589ff"
+          },
+          {
+            "title": "Backyard Skateboarding (USA)",
+            "edition": "dafd28d5ffc1524fd3c1f72f06694c2f62c3d29796b63f597c54649fc4e1869a"
+          },
+          {
+            "title": "Digimon - Battle Spirit (USA)",
+            "edition": "81f38967954d624f24be26e688aa7b50ae92e35057b4acaa4b6c1b3c07966361"
+          },
+          {
+            "title": "Breath of Fire II (USA)",
+            "edition": "96e3235099480e98c500bae58e2b664019d35ce82479ff2e6e4a3ef165d25690"
+          },
+          {
+            "title": "Around the World in 80 Days (USA)",
+            "edition": "4ba574f2a1cfbb00f574c0522b35e9d93e76486744bf47428cc3e2c5d7484a00"
+          },
+          {
+            "title": "Extreme Ghostbusters - Code Ecto-1 (USA)",
+            "edition": "bba8022852982d8a59b21d9307abc83d1c036822e8dc86008ad9e5fee5014228"
+          }
+        ]
+      },
+      {
+        "population": 154,
+        "min_bytes": 4194304,
+        "max_bytes": 8388608,
+        "games": [
+          {
+            "title": "Zapper - One Wicked Cricket! (USA)",
+            "edition": "4144a384c5456235a677f241e30d2ee0d13427247398abfbfd270e62dd03bb13"
+          },
+          {
+            "title": "World Championship Poker (USA)",
+            "edition": "4e0a1b56153ccc686059831d4a88e60d3c1e0af2104b1b82c2dc6a0bfbbf252b"
+          },
+          {
+            "title": "Baldur's Gate - Dark Alliance (USA)",
+            "edition": "f976f9c75adeb0afd95c9130aece442d3256b6a71dfe6aba6d7152701a986819"
+          },
+          {
+            "title": "Nicktoons Racing (USA)",
+            "edition": "420c472ab8020fa65b30f49aa2d8d5e3768f2f0327797049301d22580c5f0d80"
+          },
+          {
+            "title": "ZooCube (USA)",
+            "edition": "4ff06adac85412b50df855350981795e21b186997572b7610881d9621e10d9fc"
+          },
+          {
+            "title": "Ballistic - Ecks vs. Sever (USA)",
+            "edition": "d57c73cf2969e46343e99bfbf7b61fb644e8d5f05367db8304120a1184b30b54"
+          }
+        ]
+      },
+      {
+        "population": 154,
+        "min_bytes": 8388608,
+        "max_bytes": 8388608,
+        "games": [
+          {
+            "title": "Ozzy & Drix (USA)",
+            "edition": "9a132eff56a0e2f9ae4c722e228aa6d4ce6502a5d7f854d68e446a8eb64b0c2e"
+          },
+          {
+            "title": "Marvel - Ultimate Alliance (USA)",
+            "edition": "a705dc387a73f9a60ee3b2d0928120146864153b9b2d6b2c5f03ce4f65a5d658"
+          },
+          {
+            "title": "CIMA - The Enemy (USA)",
+            "edition": "970feb9bec98e68f522f954b3b58dc5450ccd12170b62da40394e12d7420aa1a"
+          },
+          {
+            "title": "Paws & Claws - Best Friends - Dogs & Cats (USA)",
+            "edition": "c005d30f9b9949797b12620fff76ee15e7564feb4bd662e2ecbeae392b80b101"
+          },
+          {
+            "title": "Drill Dozer (USA)",
+            "edition": "a0c95241229cc2ed39d3e22cb828170a7422e9c97c4a1ca1b16fbc14ccf06d15"
+          },
+          {
+            "title": "Disney Princess - Royal Adventure (USA)",
+            "edition": "9f73b80ee37522bebc96ac84a671a564273e94883f3cff854e246b866f2ae0ea"
+          }
+        ]
+      },
+      {
+        "population": 154,
+        "min_bytes": 8388608,
+        "max_bytes": 33554432,
+        "games": [
+          {
+            "title": "Star Wars - Jedi Power Battles (USA)",
+            "edition": "41ee853c19879adbf1857c291867e5231ac9f5b856a779ed7b16ab43ca3814d4"
+          },
+          {
+            "title": "Tony Hawk's American Sk8land (USA)",
+            "edition": "9d840d418cceaf3e1e1f45ddc177832c3d13a45e3a12530b97d33e9ef67e3f3d"
+          },
+          {
+            "title": "WinX Club - Quest for the Codex (USA)",
+            "edition": "c5dba03dc8aeeccb7f40afea31c18735709fbb22ea5c9031adfe69705702ecf0"
+          },
+          {
+            "title": "Harvest Moon - More Friends of Mineral Town (USA)",
+            "edition": "9b661c2330eb163292f13c66070fcf2c7cd01563b887f34713c89f96dbc9b42c"
+          },
+          {
+            "title": "Punch King - Arcade Boxing (USA)",
+            "edition": "fb1906f0ebf2dae5d72c091b37636a37d786447e85960f3ee865bc45e1d91f01"
+          },
+          {
+            "title": "Ultimate Winter Games (USA)",
+            "edition": "a914a1d36b908f1355880b5b7cbd3f368daaa5056958ea1ed2dc6b70a0629af9"
+          }
+        ]
+      }
+    ]
+  }
+]

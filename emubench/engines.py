@@ -145,6 +145,34 @@ def worker():
     return dest / name
 
 
+def timing_worker(core):
+    from .catalog import host_target
+    if os.name != "nt" or host_target()!="windows-arm64":
+        return worker(),False
+    from .downloads import check_arch
+    try:
+        check_arch(core,"windows-arm64")
+        return worker(),False
+    except ValueError:
+        check_arch(core,"windows-x64")
+    packaged=NATIVE/"bin"/"emubench-worker-x64.exe"
+    if packaged.is_file():
+        return packaged,True
+    key=digest(NATIVE/"worker.c")+digest(NATIVE/"libretro.h")
+    dest=home()/"workers"/"windows-x64"/hashlib.sha256(key.encode()).hexdigest()[:20]
+    name="emubench-worker.exe"
+    if not (dest/name).is_file():
+        dest.parent.mkdir(parents=True,exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=dest.parent) as folder:
+            tmp=Path(folder)
+            compile_target(NATIVE,tmp/"build","emubench-worker",["-A","x64"])
+            stage=tmp/"ready"
+            stage.mkdir()
+            shutil.copy2(artifact(tmp/"build",name),stage/name)
+            promote(stage,dest)
+    return dest/name,True
+
+
 def bundled_reference():
     if not getattr(sys, "frozen", False):
         return None

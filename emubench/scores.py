@@ -13,15 +13,13 @@ import tempfile
 import time
 import uuid
 
-from . import carter, circuit, details, engines, identify, journal, library
+from . import adapters, carter, circuit, details, engines, identify, journal, library
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
 
 
-ADAPTERS = {"mgba": ("mGBA", PROFILE), "snes9x": ("Snes9x", "snes-boot-no-input-v1"),
-            "bsnes": ("bsnes", "snes-boot-no-input-v1"),
-            "cartssnes": ("CartsSNES", "snes-boot-no-input-v1")}
+ADAPTERS = {key:(name, adapters.profile(adapters.CONSOLES[name][0])) for key,name in adapters.NAMES.items()}
 
 
 def validate_file(rom, emulator):
@@ -64,18 +62,28 @@ class InterruptedWindow(InterruptedError):
     """The device became busy or another worker owns the measurement slot."""
 
 
-def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False):
+def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False, filename=None, external=None, expected_digest=None):
     engines.home().mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
            "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
     # File handles avoid pipe back-pressure while the parent watches idle state.
     with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryFile() as source, \
          tempfile.TemporaryFile() as errors:
+        root = Path(folder)
+        if filename:
+            env["EMUBENCH_CONTENT_NAME"] = filename
+        if external:
+            import shutil
+            staged = root / filename
+            shutil.copyfile(external, staged)
+            if engines.digest(staged) != expected_digest:
+                raise ValueError("Content changed while staging")
+            env["EMUBENCH_STAGED"] = "1"
         source.write(data)
         source.seek(0)
         if ready and not ready():
             raise InterruptedWindow("Waiting for idle")
-        args = [worker, str(len(data)), str(warmup), str(frames), emulator]
+        args = [worker, str(len(data)), str(warmup), str(frames), next((adapters.CORE_NAMES[k] for k,v in adapters.NAMES.items() if v==emulator),emulator)]
         root = Path(folder)
         if paced:
             args.append("paced")
@@ -124,16 +132,22 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     if not 100 <= frames <= 1_000_000 or not 0 <= warmup <= 1_000_000 or timeout <= 0:
         raise ValueError("Use 100–1,000,000 measured frames, 0–1,000,000 warm-up frames and a positive timeout")
     name, profile = ADAPTERS[emulator]
+    suffix = Path(member or rom.name).suffix.lower()
+    console = adapters.SUFFIXES.get(suffix)
+    external = rom if member is None and suffix in library.EXTERNAL else None
     if member is None:
         validate_file(rom, emulator)
-        data = rom.read_bytes()
+        data = b"" if external else rom.read_bytes()
     else:
         data = library.read_pinned_member(rom, member, emulator)
-    rom_hash = hashlib.sha256(data).hexdigest()
+    rom_hash = engines.digest(rom) if external else hashlib.sha256(data).hexdigest()
     if expected_rom is not None and expected_rom != rom_hash:
         raise ValueError("ROM changed since the campaign was created")
     library.check_header(data, emulator)
-    if emulator != "mgba" and len(data) % 32768 == 512:
+    if suffix == ".exe" and not data.startswith(b"PS-X EXE"):
+        raise ValueError("Expected a PlayStation PS-X EXE image")
+    profile = adapters.profile(console)
+    if console == "snes" and len(data) % 32768 == 512:
         data = data[512:]  # Strip the copier header before handing the cartridge to the core.
     if core:
         core = core.expanduser().resolve(strict=True)
@@ -144,15 +158,16 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
         core, meta = engines.install(requested or engines.REFERENCE)
         tag, commit = meta["tag"], meta["commit"]
     core_hash = engines.digest(core)
-    worker = engines.worker()
+    worker,translated = engines.timing_worker(core)
     worker_hash = engines.digest(worker)
     output, checkpoints = run_worker(worker, core, data, warmup, frames, timeout, ready, name,
-                                     scene.playback if scene else None)
+                                     scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,
+                                     external=external, expected_digest=rom_hash)
     if core_hash != engines.digest(core) or worker_hash != engines.digest(worker):
         raise ValueError("Core or timing worker changed during measurement")
     scene_evidence = {}
-    if not scene:
-        edition = identify.match("gba" if emulator == "mgba" else "snes", data)
+    if not scene and console in identify.CATALOGS:
+        edition = identify.match(console, data)
         if edition:
             scene_evidence["catalog_match"] = edition
     if scene:
@@ -164,7 +179,7 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     if tag and version != tag:
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
     times = list(map(int, output[5:]))
-    return {**({"build_recipe":"mgba-libretro-cmake-v1"} if tag else {}), **scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
+    return {**({"execution":"x64-on-arm64"} if translated else {}), **({"build_recipe":"mgba-libretro-cmake-v1"} if tag else {}), **scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
             "comparison_id": journal.comparison_id(rom_hash), "device_id": journal.comparison_id("installation"),
             "emulator": name, "version": version, "source_commit": commit,
             "core_sha256": core_hash, "worker_sha256": worker_hash,
@@ -176,14 +191,16 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
 
 
 def paced_pass(result, core, rom, timeout):
-    worker = engines.worker()
-    data = rom.read_bytes()
-    if engines.digest(core) != result["core_sha256"] or engines.digest(worker) != result["worker_sha256"] or hashlib.sha256(data).hexdigest() != result["rom_sha256"]:
+    worker,_ = engines.timing_worker(core)
+    suffix = rom.suffix.lower()
+    external = rom if suffix in library.EXTERNAL else None
+    data = b"" if external else rom.read_bytes()
+    if engines.digest(core) != result["core_sha256"] or engines.digest(worker) != result["worker_sha256"] or (engines.digest(rom) if external else hashlib.sha256(data).hexdigest()) != result["rom_sha256"]:
         raise ValueError("Workload, core or worker changed before the paced test")
-    if result["emulator"] != "mGBA" and len(data) % 32768 == 512:
+    if result["profile"].startswith("snes-") and len(data) % 32768 == 512:
         data = data[512:]
     _, fields = run_worker(worker, core, data, result["warmup_frames"], result["frames"], timeout,
-                           None, result["emulator"], paced=True)
+                           None, result["emulator"], paced=True, filename=rom.name if suffix==".zip" else "workload"+suffix, external=external, expected_digest=result["rom_sha256"])
     frames, late, missing, fps, audio = fields
     return {"frames":int(frames), "missed_deadlines":int(late), "audio_underrun_frames":int(missing),
             "refresh_hz":float(fps), "sample_rate":float(audio)}
@@ -222,7 +239,7 @@ def public_fields(result, title):
     from .accuracy import validated
     official = circuit.PROFILES.get(result["profile"])
     scene = official or carter.PROFILES.get(result["profile"])
-    allowed = (result["emulator"], result["profile"]) in ADAPTERS.values()
+    allowed = any(result["profile"]==adapters.profile(c) for c in adapters.CONSOLES.get(result["emulator"], ()))
     if scene:
         expected_console = {"mGBA":"gba","Snes9x":"snes","bsnes":"snes","CartsSNES":"snes"}.get(result["emulator"])
         allowed = (scene.console == expected_console and result.get("rom_sha256") == (official.digest if official else carter.GAMES[scene.console].digest)
@@ -239,7 +256,7 @@ def public_fields(result, title):
     title = public_title(title)
     if (result["system"] not in ("Darwin", "Linux", "Windows") or
         not re.fullmatch(r"[A-Za-z0-9_-]{1,24}", result["arch"]) or
-        not re.fullmatch(r"[A-Za-z0-9 ._+-]{1,80}", result["version"]) or
+        not re.fullmatch(r"[A-Za-z0-9 ()._+-]{1,80}", result["version"]) or
         not re.fullmatch(r"[0-9a-f]{64}", result["core_sha256"]) or
         not re.fullmatch(r"[0-9a-f]{64}", result["worker_sha256"]) or
         (result["source_commit"] is not None and not engines.SHA.fullmatch(result["source_commit"]))):
@@ -253,12 +270,16 @@ def public_fields(result, title):
     if not isinstance(cpu, str) or not 1 <= len(cpu) <= 160 or not cpu.isprintable():
         raise ValueError("Invalid processor model")
     cohort = {"edition":edition["edition"]} if edition else {}
+    if "execution" in result:
+        if result["execution"]!="x64-on-arm64" or result["system"]!="Windows" or result["arch"].lower() not in ("arm64","aarch64"):
+            raise ValueError("Invalid emulator execution architecture")
+        cohort["execution"]=result["execution"]
     if "build_recipe" in result:
         if result["build_recipe"]!="mgba-libretro-cmake-v1" or result["emulator"]!="mGBA" or not result["source_commit"]:
             raise ValueError("Invalid source build recipe")
         cohort["build_recipe"]=result["build_recipe"]
     if "accuracy" in result:
-        cohort["accuracy"] = validated(result["accuracy"], "gba" if result["emulator"] == "mGBA" else "snes",
+        cohort["accuracy"] = validated(result["accuracy"], result["profile"].split("-")[0],
                                        result["core_sha256"], result["worker_sha256"])
     if scene:
         cohort["scene_checkpoints"] = list(result["scene_checkpoints"])
@@ -267,11 +288,11 @@ def public_fields(result, title):
         if field in result:
             cohort[field] = str(uuid.UUID(result[field]))
     if "chips" in result:
-        from .chips import NAMES
+        from .chips import NAMES, LEGACY
         data = result["chips"]
-        if result["emulator"] == "mGBA" or set(data) != set(NAMES) or any(v not in ("pass","fail","unresolved") for v in data.values()):
+        if result["emulator"] not in ("Snes9x","bsnes","CartsSNES") or set(data) not in (set(NAMES),set(LEGACY)) or any(v not in ("pass","fail","unresolved") for v in data.values()):
             raise ValueError("Invalid coprocessor check results")
-        cohort["chips"] = {name:data[name] for name in NAMES}
+        cohort["chips"] = {name:data[name] for name in NAMES if name in data}
     if "paced" in result:
         data = result["paced"]
         if (data["frames"] != n or type(data["missed_deadlines"]) is not int or not 0 <= data["missed_deadlines"] <= n

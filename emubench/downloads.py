@@ -294,6 +294,9 @@ def latest_core(key):
         if key in ("snes9x","bsnes"):
             from . import winarm
             return winarm.install(key)[0]
+        spec,path=get(key,"windows-x64","core")
+        print(f"{CATALOG[key].name}: x64 core using Windows on Arm translation",file=sys.stderr)
+        return path
     spec, path = get(key, host_target(), "core")
     print(f"{CATALOG[key].name} core {spec.version}: {path}", file=sys.stderr)
     return path
@@ -315,8 +318,9 @@ def describe(spec, path):
 def batch(keys, target, channel, version, plan):
     failures = 0
     for key in keys:
+        selected=("core" if CATALOG[key].core else "desktop") if channel=="bench" else channel
         try:
-            if target == "windows-arm64" and target == host_target() and channel != "desktop" and key in ("mgba","snes9x","bsnes"):
+            if target == "windows-arm64" and target == host_target() and selected != "desktop" and key in ("mgba","snes9x","bsnes"):
                 if plan:
                     print(f"{CATALOG[key].name}: native upstream source build ({version})")
                 elif key == "mgba":
@@ -325,7 +329,8 @@ def batch(keys, target, channel, version, plan):
                     from . import winarm
                     print(winarm.install(key, None if version == "latest" else version)[0])
             else:
-                describe(*get(key, target, channel, version, plan))
+                actual="windows-x64" if target=="windows-arm64" and selected=="core" and key not in ("mgba","snes9x","bsnes") else target
+                describe(*get(key, actual, selected, version, plan))
         except (OSError, ValueError, BadZipFile, EOFError, HTTPException) as exc:
             failures += 1
             print(f"{CATALOG[key].name}: {exc}", file=sys.stderr)

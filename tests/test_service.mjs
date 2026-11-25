@@ -32,3 +32,9 @@ vm.runInContext(readFileSync('site/analysis.js','utf8')+readFileSync('site/demo.
 const res=vm.runInContext('(()=>{const rows=demoRows();const builds=[...new Set(rows.filter(r=>r.emulator==="CartsSNES").map(build))];const a=ranking(rows,...builds);const f=rows.find(r=>r.profile.includes("-circuit-")&&r.emulator==="CartsSNES");const b=ranking([...rows,{...f,outcome:"failed"}],...builds);return [a.n,a.interval,b.n,b.failed,comparison(rows,"devices").length,comparison(rows,"emulators").length]})()',ctx);
 assert.deepEqual(Array.from(res).slice(0,4),[2,null,1,1]);assert.ok(res[4]>0 && res[5]>0);
 console.log('Score creation, duplicate recovery, validation, pagination, failure coverage and two-way matching passed.');
+assert.equal((await fetch('/api/runs','POST',{...score,verified:true})).status,400);
+assert.equal((await fetch('/api/runs','POST',{...score,emulator:"Nestopia UE",profile:"nes-boot-no-input-v1",run_id:randomUUID()})).status,201);
+assert.equal((await fetch('/api/runs','POST',{...score,emulator:"Nestopia UE",profile:"gba-boot-no-input-v1",run_id:randomUUID()})).status,400);
+const studies=await (await fetch('/api/studies')).json();
+assert.equal(studies.studies.length,2);
+assert.equal(studies.studies[0].groups.flatMap(g=>g.games).length,24);

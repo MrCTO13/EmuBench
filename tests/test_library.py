@@ -35,9 +35,9 @@ class Library(unittest.TestCase):
             pack.writestr("too-small.sfc", b"")
         (sub/"corrupt.zip").write_bytes(b"bad")
         runs = library.discover([self.root, sub], "all")
-        self.assertEqual([r["emulator"] for r in runs], ["mgba", "snes9x", "bsnes", "mgba"])
-        self.assertEqual(runs[1]["member"], "asia/one.SMC")
-        self.assertEqual(runs[1]["sha256"], runs[2]["sha256"])
+        self.assertEqual([r["emulator"] for r in runs], ["mgba", "gpsp", "snes9x", "bsnes", "mgba", "gpsp"])
+        self.assertEqual(runs[2]["member"], "asia/one.SMC")
+        self.assertEqual(runs[3]["sha256"], runs[2]["sha256"])
         self.assertIn("1 duplicate", self.log.getvalue())
         self.assertIn("2 unreadable", self.log.getvalue())
         self.assertEqual(len(library.discover([self.root],"snes9x")), 1)
@@ -46,7 +46,7 @@ class Library(unittest.TestCase):
             changed.writestr("asia/one.SMC", b"x"*32768)
         with self.assertRaisesRegex(ValueError, "ROM changed"):
             scores.measure(sub/"mixed.ZIP", None, None, 0, 100, 30, emulator="bsnes",
-                           expected_rom=runs[1]["sha256"], member=runs[1]["member"])
+                           expected_rom=runs[3]["sha256"], member=runs[2]["member"])
 
     def test_empty_and_symlink_loop(self):
         with self.assertRaisesRegex(ValueError,"No compatible"):

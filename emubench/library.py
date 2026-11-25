@@ -9,7 +9,10 @@ from zipfile import BadZipFile, ZipFile
 import zlib
 import lzma
 
-SUPPORTED = {".gba": ("mgba",), ".sfc": ("snes9x", "bsnes"), ".smc": ("snes9x", "bsnes")}
+from . import adapters, engines
+
+SUPPORTED = {ext:adapters.ROUTES[console][1] for ext,console in adapters.SUFFIXES.items()}
+EXTERNAL = {".pbp", ".chd", ".zip"}
 MAX_SIZE = 32 * 1024**2
 ARCHIVE_ERRORS = (BadZipFile, RuntimeError, EOFError, zlib.error, lzma.LZMAError)
 
@@ -18,13 +21,17 @@ def check_size(name, size, emulator):
     suffix = Path(name).suffix.lower()
     if ("snes9x" if emulator == "cartssnes" else emulator) not in SUPPORTED.get(suffix, ()):
         raise ValueError(f"Unsupported cartridge format for {emulator}")
-    minimum = 192 if suffix == ".gba" else 32768
+    minimum = {".sfc":32768, ".smc":32768, ".nes":16}.get(suffix,192)
+    if suffix in EXTERNAL:
+        if size < minimum:
+            raise ValueError("Empty or incomplete content file")
+        return
     if not minimum <= size <= MAX_SIZE:
         raise ValueError(f"Expected a cartridge between {minimum} bytes and 32 MiB")
 
 
 def check_header(data, emulator):
-    if emulator == "mgba" and data[3:4] != b"\xea":
+    if emulator in ("mgba","gpsp") and data[3:4] != b"\xea":
         raise ValueError("This file does not have the expected GBA cartridge header")
 
 
@@ -76,6 +83,8 @@ def discover(roots, emulator):
         peers = SUPPORTED.get(suffix.lower(), ())
         if emulator == "cartssnes" and "snes9x" in peers:
             return ("cartssnes",)
+        if suffix.lower() == ".zip":
+            return peers if emulator=="arcade" else tuple(p for p in peers if p==emulator)
         return peers if emulator == "all" else tuple(peer for peer in peers if peer == emulator)
 
     def scan(path, explicit=False):
@@ -88,9 +97,24 @@ def discover(roots, emulator):
         try:
             if not path.is_file():
                 raise ValueError("Expected a regular file")
+            if peers and path.suffix.lower() in EXTERNAL:
+                check_size(path.name, path.stat().st_size, peers[0])
+                if path.suffix.lower()==".chd" and emulator=="all":
+                    return  # Several systems share CHD. Require a selected emulator.
+                digest = engines.digest(path)
+                identity = (digest, peers, path.stem if path.suffix.lower()==".zip" else "")
+                if identity in seen:
+                    counts["duplicates"] += 1
+                    return
+                seen.add(identity)
+                workloads.extend(dict(path=str(path), sha256=digest, emulator=p) for p in peers)
+                return
             if peers:
                 check_size(path.name, path.stat().st_size, peers[0])
                 with path.open("rb") as stream:
+                    if path.suffix.lower()==".exe" and stream.read(8)!=b"PS-X EXE":
+                        return
+                    stream.seek(0)
                     data = stream.read(MAX_SIZE + 1)
                 check_size(path.name, len(data), peers[0])
                 add(path, None, data, peers)
@@ -101,7 +125,7 @@ def discover(roots, emulator):
                 for entry in entries:
                     name = PurePosixPath(entry.filename.replace("\\", "/"))
                     peers = compatible(name.suffix)
-                    if not peers or entry.is_dir() or "__MACOSX" in name.parts or name.name.startswith("._"):
+                    if name.suffix.lower() in EXTERNAL or not peers or entry.is_dir() or "__MACOSX" in name.parts or name.name.startswith("._"):
                         continue
                     try:
                         if names[entry.filename] != 1:

@@ -3,6 +3,7 @@
 #endif
 #include "libretro.h"
 #include <stdio.h>
+#include <stdarg.h>
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +35,18 @@ static struct {
 } core;
 static unsigned renders, pixel_bytes = 2;
 static uint64_t audio_frames, signature = 2166136261u;
-static bool bad_video, have_previous, snes;
+static bool bad_video, have_previous, snes, can_dupe;
+static bool arcade, fbneo, arcade_loaded, load_error;
+static void core_log(enum retro_log_level level, const char *fmt, ...) {
+    if (!arcade) return;
+    char message[1024];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(message, sizeof(message), fmt, args);
+    va_end(args);
+    if (fbneo && strstr(message, "No missing files, proceeding")) arcade_loaded = true;
+    if (level == RETRO_LOG_ERROR || strstr(message, "WRONG CHECKSUM")) load_error = true;
+}
 static uint16_t buttons;
 static const char *capture_video;
 static enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_0RGB1555;
@@ -95,12 +107,22 @@ static void wait_until(uint64_t target) {
 }
 static bool environment(unsigned command, void *data) {
     switch (command) {
+    case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
+        if (!arcade) return false;
+        ((struct retro_log_callback *)data)->log = core_log;
+        return true;
+    case RETRO_ENVIRONMENT_SHUTDOWN:
+        load_error = true;
+        return true;
     case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
+        *(const char **)data = getenv("EMUBENCH_SYSTEM_DIR");
+        if (!*(const char **)data) *(const char **)data = ".";
+        return true;
     case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
         *(const char **)data = ".";
         return true;
     case RETRO_ENVIRONMENT_GET_CAN_DUPE:
-        *(bool *)data = false;
+        *(bool *)data = can_dupe;
         return true;
     case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
         enum retro_pixel_format format = *(enum retro_pixel_format *)data;
@@ -133,7 +155,7 @@ static bool environment(unsigned command, void *data) {
 }
 static void video(const void *buffer, unsigned width, unsigned height, size_t pitch) {
     bool valid_geometry = snes ? (width == 256 || width == 512) && height >= 200 && height <= 512
-                               : width == 240 && height == 160;
+                               : width >= 16 && width <= 4096 && height >= 16 && height <= 4096;
     if (!buffer || buffer == RETRO_HW_FRAME_BUFFER_VALID || !valid_geometry ||
         pitch < width * pixel_bytes) {
         bad_video = true;
@@ -152,7 +174,7 @@ static void video(const void *buffer, unsigned width, unsigned height, size_t pi
     }
     uint32_t sample = 2166136261u;
     for (unsigned i = 0; i < 8; i++) {
-        size_t offset = (i * 19 + 5) * pitch + (i * 29 + 3) * pixel_bytes;
+        size_t offset = ((i * 19 + 5) % height) * pitch + ((i * 29 + 3) % width) * pixel_bytes;
         for (unsigned channel = 0; channel < pixel_bytes; channel++)
             sample = (sample ^ pixels[offset + channel]) * 16777619u;
     }
@@ -200,7 +222,7 @@ static long number(const char *value, long min, long max) {
 }
 int main(int argc, char **argv) {
     if (argc != 5 && argc != 6) return fail("Expected ROM byte count, warm-up frames, measured frames and core name");
-    long bytes = number(argv[1], 192, 32 * 1024 * 1024);
+    long bytes = number(argv[1], 0, 32 * 1024 * 1024);
     long warmup = number(argv[2], 0, 1000000), frames = number(argv[3], 100, 1000000);
     if (bytes < 0 || warmup < 0 || frames < 0) return fail("Invalid measurement parameters");
 #ifdef _WIN32
@@ -214,13 +236,16 @@ int main(int argc, char **argv) {
     struct retro_system_info info = {0};
     core.get_system_info(&info);
     snes = !strcmp(argv[4], "Snes9x") || !strcmp(argv[4], "bsnes") || !strcmp(argv[4], "CartsSNES");
-    if ((!snes && strcmp(argv[4], "mGBA")) || !info.library_name || strcmp(info.library_name, argv[4]))
+    if (!info.library_name || strcmp(info.library_name, argv[4]))
         return fail("Selected library does not identify as the requested emulator");
+    fbneo = !strcmp(argv[4], "FinalBurn Neo");
+    arcade = fbneo || !strcmp(argv[4], "MAME");
+    can_dupe = !strcmp(argv[4], "Gambatte");
     const char *version = info.library_version;
     if (!version || !*version || strlen(version) > 80 ||
-        strspn(version, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-+_ ") != strlen(version))
+        strspn(version, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz().-+_ ") != strlen(version))
         return fail("Invalid core version");
-    uint8_t *rom = malloc((size_t)bytes);
+    uint8_t *rom = malloc(bytes ? (size_t)bytes : 1);
     uint64_t *timings = calloc((size_t)frames, sizeof(*timings));
     if (!rom || !timings || fread(rom, 1, (size_t)bytes, stdin) != (size_t)bytes)
         return fail("Unable to read ROM into memory");
@@ -232,7 +257,12 @@ int main(int argc, char **argv) {
     core.set_input_state(input);
     core.init();
     struct retro_game_info game = { snes ? "workload.sfc" : "workload.gba", rom, (size_t)bytes, NULL };
-    if (info.need_fullpath) {
+    const char *filename = getenv("EMUBENCH_CONTENT_NAME");
+    if (filename) game.path = filename;
+    if (!bytes && getenv("EMUBENCH_STAGED")) {
+        if (!info.need_fullpath) return fail("Core requires in-memory content");
+        game.data = NULL;
+    } else if (info.need_fullpath) {
         FILE *staged = fopen(game.path, "wb");
         if (!staged || fwrite(rom, 1, (size_t)bytes, staged) != (size_t)bytes || fclose(staged))
             return fail("Could not stage input for a full-path core");
@@ -283,7 +313,7 @@ int main(int argc, char **argv) {
         renders = 0;
         core.run();
         uint64_t now = clock_ns();
-        if (bad_video || renders != 1 || now <= last)
+        if ((!diagnostic && (bad_video || renders != 1)) || now <= last)
             return fail("Expected one completed software framebuffer per timed frame and a positive duration");
         if (paced) {
             uint64_t due = epoch + (uint64_t)((i + 1) * 1e9 / av.timing.fps);
@@ -295,6 +325,7 @@ int main(int argc, char **argv) {
         timings[i] = now - last;
         last = now;
     }
+    if (load_error || (fbneo && !arcade_loaded)) return fail("Emulator could not confirm a working game or ROM set");
     if (!audio_frames) return fail("Core emitted no audio samples");
     if (paced) {
         FILE *report = fopen("paced-result", "w");
@@ -309,6 +340,7 @@ int main(int argc, char **argv) {
     if (fclose(evidence)) return fail("Incomplete frame evidence");
     // Capture the next frame after sealing the timed interval and its counters.
     if (replay) {
+        bad_video = false;
         renders = 0;
         capture_video = diagnostic ? "final-frame" : "scene-end";
         core.run();

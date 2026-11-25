@@ -2,7 +2,8 @@
 import struct
 from . import engines, scores, video
 
-NAMES = ("SA-1 multiply", "Super FX immediate")
+LEGACY = ("SA-1 multiply", "Super FX immediate")
+NAMES = (*LEGACY, "DSP-1 fixed-point multiply")
 
 
 def cartridge(name):
@@ -43,6 +44,15 @@ def cartridge(name):
         probe.extend(bytes.fromhex("ad 00 30 c9 34 d0 05 ad 01 30 c9 12"))
         remote=bytes.fromhex("f0 34 12 00 01")  # IWT R0,#$1234; STOP; NOP.
         mapping,kind=0x20,0x13
+    elif name==NAMES[2]:
+        # Small LoROM maps the DSP-1 data port at $20:8000 and status at $20:C000.
+        # Command $00 multiplies two signed Q15 operands. 0.5 * 0.5 = 0.25 ($2000).
+        for val in (0,0,0x40,0,0x40):
+            probe.extend(bytes.fromhex("af 00 c0 20 10 fa"))
+            probe.extend((0xa9,val,0x8f,0,0x80,0x20))
+        probe.extend(bytes.fromhex("af 00 c0 20 10 fa af 00 80 20 c9 00 d0 06 af 00 80 20 c9 20"))
+        remote=b""
+        mapping,kind=0x20,0x03
     else:
         raise ValueError("Unknown cartridge coprocessor check")
     green=bytearray()

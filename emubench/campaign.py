@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from . import accuracy, carter, chips, circuit, downloads, engines, journal, library, scores, uploads
+from . import adapters, accuracy, carter, chips, circuit, downloads, engines, journal, library, scores, uploads
 
 
 def arguments(commands):
@@ -23,11 +23,12 @@ def arguments(commands):
     new.add_argument("queue", type=Path)
     new.add_argument("--rom", type=Path, action="append", help="Local ROM, ZIP or directory (repeatable)")
     new.add_argument("--rom-dir", type=Path, action="append", help="Recursively scan a ROM library (repeatable)")
+    new.add_argument("--system-dir", type=Path, help="Local firmware directory")
     new.add_argument("--share-title", action="store_true", help="Share known catalog names and editions")
     new.add_argument("--circuit", choices=("all",*circuit.LEVELS), help="Queue the source-built public scenes")
     new.add_argument("--carts-core", type=Path, help="Include this CartsSNES library in an all-emulator queue")
     new.add_argument("--carter", choices=("all","easy","normal","hard"), help="Queue pinned Carter scenes")
-    new.add_argument("--emulator", choices=(*scores.ADAPTERS, "all"),
+    new.add_argument("--emulator", choices=(*scores.ADAPTERS, "all", "arcade"),
                      help="Select one emulator or all compatible ones (default for directories)")
     build = new.add_mutually_exclusive_group()
     build.add_argument("--version", default=None)
@@ -83,6 +84,8 @@ def create(args):
         raise ValueError("For SNES select --core PATH or --latest-core")
     if args.carts_core and (emulator!="all" or args.core):
         raise ValueError("--carts-core requires --emulator all")
+    if (args.carter or args.circuit) and emulator not in (*adapters.SUITE_PEERS, "all"):
+        raise ValueError("Official scenes currently cover the GBA and SNES suite peers")
     if args.circuit:
         if paths or args.carter:
             raise ValueError("Circuit generates its own cartridges")
@@ -124,15 +127,24 @@ def create(args):
             core, meta = engines.install(args.version or engines.REFERENCE)
             tag, commit = meta["tag"], meta["commit"]
         else:
-            core = downloads.latest_core(peer)
+            try:
+                core = downloads.latest_core(peer)
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                if emulator not in ("all","arcade"):
+                    raise
+                print(f"{peer} installation unavailable: {exc}", file=sys.stderr)
+                cores[peer] = dict(error=str(exc), tag=None, commit=None)
+                continue
         cores[peer] = dict(path=str(core), sha256=engines.digest(core), tag=tag, commit=commit)
+    if all("error" in item for item in cores.values()):
+        raise ValueError("No compatible core could be installed")
     engines.worker()
     plan = dict(share_title=args.share_title, campaign_id=str(uuid.uuid4()), workloads=workloads, cores=cores, warmup=args.warmup_frames, frames=args.frames,
-                timeout=args.timeout, loop=args.loop, days=args.days, idle_check=gate,
+                system_dir=os.environ.get("EMUBENCH_SYSTEM_DIR"), timeout=args.timeout, loop=args.loop, days=args.days, idle_check=gate,
                 dedicated=args.dedicated, idle_seconds=args.idle_seconds)
     if args.circuit:
         plan["worker_sha256"]=engines.digest(engines.worker())
-        plan["chips"]={peer:chips.run(peer,Path(build["path"])) for peer,build in cores.items() if peer!="mgba"}
+        plan["chips"]={peer:chips.run(peer,Path(build["path"])) for peer,build in cores.items() if peer!="mgba" and "path" in build}
     if args.carter:
         plan["accuracy"] = accuracy.run(emulator, Path(cores[emulator]["path"]))
     dest = args.queue.expanduser().resolve()
@@ -183,6 +195,8 @@ def state(db, message):
 
 
 def resume(db, path, plan):
+    if plan.get("system_dir"):
+        os.environ["EMUBENCH_SYSTEM_DIR"]=plan["system_dir"]
     engines.home().mkdir(parents=True, exist_ok=True)
     if "workloads" not in plan:
         # Preserve job indices, pinned builds and Carter scene identity in v0.4 and older queues.
@@ -243,6 +257,8 @@ def resume(db, path, plan):
                 print(f"Round {number}, job {job_id}: {local_name} ({emulator})", flush=True)
                 try:
                     with journal.attempt(Path(local_name), build["tag"] or "local core", f"round {number}, job {job_id}") as (run_id, started):
+                        if "error" in build:
+                            raise ValueError("Core unavailable during installation: "+build["error"])
                         public_scene = circuit.PROFILES.get(workload.get("scene"))
                         scene = public_scene or carter.PROFILES.get(workload.get("scene"))
                         if "scene" in workload and not scene:
@@ -283,7 +299,7 @@ def resume(db, path, plan):
                     message, wait = str(exc), 10
                 except (OSError, ValueError, subprocess.SubprocessError) as exc:
                     db.execute("INSERT INTO failures VALUES (?,?,?)", (job_id, time.time(), str(exc)[:240]))
-                    attempts += 1
+                    attempts = 3 if "error" in build else attempts+1
                     status = "held" if attempts >= 3 else "pending"
                     db.execute("UPDATE jobs SET status=?,attempts=?,available=?,error=? WHERE id=?",
                                (status, attempts, now + 30 * attempts, str(exc)[:240], job_id))
@@ -316,6 +332,7 @@ def execute(args):
             resume(db, path, json.loads(plan))
             if args.wait_uploads:
                 uploads.wait_for_pending()
+            return int(bool(db.execute("SELECT 1 FROM jobs WHERE status='held' LIMIT 1").fetchone()))
         elif args.action == "launch-agent":
             if sys.platform != "darwin":
                 raise ValueError("Launch agents are for macOS")

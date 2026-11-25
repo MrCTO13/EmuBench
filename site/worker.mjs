@@ -19,10 +19,10 @@ export function validate(r) {
   }
   requireValue(fields(r,["run_id","game","profile","emulator","version","source_commit","core_sha256","worker_sha256",
     "os","arch","cpu","warmup_frames","rendered_frames","average_fps","low_1pct_fps","high_1pct_fps","timing",
-    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe"]));
-  requireValue(Object.hasOwn(emulators,r.emulator) && plain(r.run_id,36,UUID) && plain(r.game,90,TEXT));
+    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution"]));
+  requireValue(Object.hasOwn(CORE_CONSOLES,r.emulator) && plain(r.run_id,36,UUID) && plain(r.game,90,TEXT));
   requireValue(["Darwin","Linux","Windows"].includes(r.os) && /^(arm64|aarch64|amd64|x86_64)$/i.test(r.arch));
-  requireValue(plain(r.cpu,160,CPU) && plain(r.version,80,/^[a-zA-Z0-9 ._+-]+$/) && SHA.test(r.core_sha256)
+  requireValue(plain(r.cpu,160,CPU) && plain(r.version,80,/^[a-zA-Z0-9 ()._+-]+$/) && SHA.test(r.core_sha256)
     && SHA.test(r.worker_sha256) && (r.source_commit === null || /^[0-9a-f]{40}$/.test(r.source_commit)));
   for (const key of ["comparison_id","campaign_id","device_id"]) if (key in r) requireValue(plain(r[key],36,UUID));
   for (const key of ["average_fps","high_1pct_fps","low_1pct_fps"]) requireValue(integer(r[key],0,1e8));
@@ -33,7 +33,7 @@ export function validate(r) {
       && r.rendered_frames === profile.frames && r.warmup_frames === profile.warmup
       && profile.references.some(pair => JSON.stringify(pair) === JSON.stringify(r.scene_checkpoints)));
   } else {
-    requireValue(r.profile === emulators[r.emulator]+"-boot-no-input-v1" && !r.scene_checkpoints && !r.scene_description);
+    requireValue(CORE_CONSOLES[r.emulator].some(c=>r.profile===c+"-boot-no-input-v1") && !r.scene_checkpoints && !r.scene_description);
   }
   requireValue(Array.isArray(r.timing) && r.timing.length > 0 && r.timing.length <= 120);
   const keys = ["start_ms","end_ms","avg_fps","worst_fps","worst_ms","worst_frame","worst_at_ms"];
@@ -46,18 +46,21 @@ export function validate(r) {
   }
   requireValue(Math.abs(r.average_fps-1000*r.rendered_frames/end)<=1);
   if (r.accuracy) {
-    const names=emulators[r.emulator]==="gba"?["ARM","Thumb","Memory"]:["65C816 basic","SPC700"];
-    requireValue(fields(r.accuracy,["suite","core_sha256","worker_sha256","checks"]) && r.accuracy.suite==="cpu-memory-v1"
+    const color=r.profile==="gbc-boot-no-input-v1" && ["Gambatte","SameBoy"].includes(r.emulator);
+    requireValue(color || Object.hasOwn(emulators,r.emulator));
+    const names=color?COLOR_CHECKS:emulators[r.emulator]==="gba"?["ARM","Thumb","Memory"]:["65C816 basic","SPC700"];
+    requireValue(fields(r.accuracy,["suite","core_sha256","worker_sha256","checks"]) && r.accuracy.suite===(color?"gbc-v1":"cpu-memory-v1")
       && r.accuracy.core_sha256===r.core_sha256 && r.accuracy.worker_sha256===r.worker_sha256
       && fields(r.accuracy.checks,names) && names.every(k=>["pass","fail","unresolved"].includes(r.accuracy.checks[k])));
   }
+  if ("execution" in r)requireValue(r.execution==="x64-on-arm64" && r.os==="Windows" && /^(arm64|aarch64)$/i.test(r.arch));
   if ("build_recipe" in r) requireValue(r.build_recipe==="mgba-libretro-cmake-v1" && r.emulator==="mGBA" && r.source_commit);
   if ("edition" in r) requireValue(plain(r.edition,64,SHA));
   if ("paced" in r) requireValue(fields(r.paced,["frames","missed_deadlines","audio_underrun_frames","refresh_hz","sample_rate"])
     && integer(r.paced.frames,100,1e6) && integer(r.paced.missed_deadlines,0,r.paced.frames)
     && integer(r.paced.audio_underrun_frames,0,1e10) && r.paced.refresh_hz>=45 && r.paced.refresh_hz<=75
     && r.paced.sample_rate>=8000 && r.paced.sample_rate<=192000 && typeof r.paced.refresh_hz==="number" && typeof r.paced.sample_rate==="number");
-  if ("chips" in r) requireValue(emulators[r.emulator]==="snes" && fields(r.chips,["SA-1 multiply","Super FX immediate"])
+  if ("chips" in r) requireValue(emulators[r.emulator]==="snes" && fields(r.chips,CHIP_CHECKS) && Object.values(r.chips).every(v=>["pass","fail","unresolved"].includes(v))
     && ["SA-1 multiply","Super FX immediate"].every(k=>["pass","fail","unresolved"].includes(r.chips[k])));
   return r;
 }
@@ -90,6 +93,7 @@ export default {async fetch(request,env) {
     return json({url:url.origin+"/run/"+r.run_id},inserted.meta.changes?201:200);
   }
   if(request.method!=="GET")return json({error:"Unsupported method"},405);
+  if(path==="/api/studies")return json(LAB);
   if(path==="/api/runs") {
     const clauses=[],params=[];
     for(const [key,col] of [["campaign","campaign"],["emulator","emulator"],["profile","profile"],["device","device"]]){

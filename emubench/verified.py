@@ -11,7 +11,7 @@ from pathlib import Path
 
 CLOSED_EMULATORS = ("CartsSNES",)
 
-DISCLOSURE = ("EmuBench is built and run by the GitHub account MrCTO13. The same person develops CARTS, "
+DISCLOSURE = ("EmuBench is built and run by Mr.CTO (GitHub account MrCTO13). The same person develops CARTS, "
               "a commercial emulator project that includes the CartsSNES core, and made the Carter homebrew "
               "games and Carter Circuit scenes used as official workloads. To keep that from tilting the "
               "results: the method and every workload are open source, every emulator runs in the same harness, "

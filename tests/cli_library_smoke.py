@@ -50,7 +50,7 @@ def main():
             results = [json.loads(row[0]) for row in db.execute("SELECT result FROM jobs")]
         assert {r["run_id"] for r in records}=={r["id"] for r in results if r["repeatability"]["accepted"]}
         assert {r["emulator"] for r in results}=={"mGBA","gpSP","Snes9x","bsnes"}
-        assert all(r["rendered_frames"]==120 and r["game"]=="Personal ROM" for r in records)
+        assert all(r["rendered_frames"]==120*r["window"]["loops"] and r["game"]=="Personal ROM" for r in records)
         assert "Private " not in json.dumps(records) and str(work) not in json.dumps(records)
         with closing(sqlite3.connect(queue)) as db:
             results = [json.loads(row[0]) for row in db.execute("SELECT result FROM jobs")]

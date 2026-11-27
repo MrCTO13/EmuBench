@@ -67,7 +67,7 @@ jobs:
           ./dist/emubench campaign resume "$RUNNER_TEMP/test.sqlite"
           ./dist/emubench campaign export "$RUNNER_TEMP/test.sqlite" --job 1 --out "$RUNNER_TEMP/campaign.json"
           ./dist/emubench history --game sample
-          python -c "import pathlib,os,json; root=pathlib.Path(os.environ['RUNNER_TEMP']); data=json.loads((root/'campaign.json').read_text()); assert data['rendered_frames']==100 and data['finished_utc'] and data['sampled_frame_changes']>0; assert 'worst_at_ms' in (root/'chart.html').read_text(encoding='utf-8')"
+          python -c "import pathlib,os,json; root=pathlib.Path(os.environ['RUNNER_TEMP']); data=json.loads((root/'campaign.json').read_text()); assert data['rendered_frames']==100*data['window']['loops'] and data['finished_utc'] and data['sampled_frame_changes']>0; assert 'worst_at_ms' in (root/'chart.html').read_text(encoding='utf-8')"
       - name: Validate native identity and public Circuit playback
         shell: bash
         run: |
@@ -79,7 +79,7 @@ jobs:
         run: |
           ./dist/emubench download --all
           ./dist/emubench run --latest-core --rom "$RUNNER_TEMP/sample.gba" --frames 120 --out "$RUNNER_TEMP/downloaded-core.json"
-          python -c "import json,os,pathlib; r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'downloaded-core.json').read_text()); assert r['rendered_frames']==120 and r['sampled_frame_changes']>0"
+          python -c "import json,os,pathlib; r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'downloaded-core.json').read_text()); assert r['rendered_frames']==120*r['window']['loops'] and r['sampled_frame_changes']>0"
       - name: Verify full-frame motion polarity and public homebrew downloads
         if: matrix.platform == 'linux-x64'
         shell: bash
@@ -99,7 +99,7 @@ jobs:
             ./dist/emubench suite --emulator "$emulator" --scene hard
             python tests/chip_polarity.py "$emulator"
           done
-          python -c "import json,os,pathlib; root=pathlib.Path(os.environ['RUNNER_TEMP']); a,b=[json.loads((root/(k+'.json')).read_text()) for k in ('snes9x','bsnes')]; assert all(r['rendered_frames']==300 and r['frame_check']['changes']==r['frame_check']['samples']-1 for r in (a,b)); assert a['comparison_id']==b['comparison_id'] and a['worker_sha256']==b['worker_sha256'] and a['profile']==b['profile'] and a['core_sha256']!=b['core_sha256']"
+          python -c "import json,os,pathlib; root=pathlib.Path(os.environ['RUNNER_TEMP']); a,b=[json.loads((root/(k+'.json')).read_text()) for k in ('snes9x','bsnes')]; assert all(r['rendered_frames']==300*r['window']['loops'] and r['frame_check']['changes']==r['frame_check']['samples']-1 for r in (a,b)); assert a['comparison_id']==b['comparison_id'] and a['worker_sha256']==b['worker_sha256'] and a['profile']==b['profile'] and a['core_sha256']!=b['core_sha256']"
           ./dist/emubench compare "$RUNNER_TEMP/snes9x.json" "$RUNNER_TEMP/bsnes.json" --out "$RUNNER_TEMP/comparison.html"
       - name: Verify real regional timing and signed receipts over HTTP
         if: matrix.platform == 'linux-x64'

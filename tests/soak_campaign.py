@@ -32,6 +32,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         root=Path(tmp)
         os.environ["EMUBENCH_HOME"]=str(root/"data")
+        # Queue durability test, not a timing test: 1,001 jobs can't each take 10 s x 3.
+        os.environ.update(EMUBENCH_MIN_WINDOW_MS_OVERRIDE="0",EMUBENCH_COOL_DOWN_S="0",EMUBENCH_MAX_SPREAD_OVERRIDE="1")
         directory=root/"games"
         directory.mkdir()
         data=circuit.gba_image(0)

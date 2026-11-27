@@ -208,7 +208,8 @@ def _measure_once(rom, requested, core, warmup, frames, timeout, ready, expected
     video_mode = {}
     before = telemetry.snapshot()
     idle = conditions.idle()
-    from .repeats import MIN_WINDOW_MS
+    from .repeats import min_window_ms
+    MIN_WINDOW_MS = min_window_ms()
     def attempt(no_state=False, phase=None):
         return run_worker(worker, core, data, warmup, frames, timeout, ready, name,
                           scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,

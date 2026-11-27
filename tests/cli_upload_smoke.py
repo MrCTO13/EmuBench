@@ -19,7 +19,9 @@ def main():
         isolated_path = work / "empty-path"
         isolated_path.mkdir()
         env = {**os.environ, "PATH": str(isolated_path), "EMUBENCH_HOME": str(private_home),
-               "GH_CONFIG_DIR": str(work / "no-gh-login"), "GH_TOKEN":"", "GITHUB_TOKEN":""}
+               "GH_CONFIG_DIR": str(work / "no-gh-login"), "GH_TOKEN":"", "GITHUB_TOKEN":"",
+               # Outbox mechanics, not the timing gate: hosted Mac runners are VMs.
+               "EMUBENCH_MAX_SPREAD_OVERRIDE": "0.5", "EMUBENCH_COOL_DOWN_S": "1"}
         rom = work / "A Private File.gba"
         write(rom)
 

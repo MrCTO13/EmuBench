@@ -70,7 +70,9 @@ def main():
             payloads = [json.loads(row[0]) for row in db.execute("SELECT payload FROM score_outbox")]
             assert {r["run_id"] for r in payloads}==eligible
             assert all(r["game"] in ("Public Game", "Personal ROM") for r in payloads)
-            assert all(r["rendered_frames"] in (1800,7200,18000,36000) and "frame_ns" not in r for r in payloads)
+            # Schema 2 repeats the window from a save state until 10 s is timed.
+            assert all(r["rendered_frames"] // r["window"]["loops"] in (1800,7200,18000,36000)
+                       and r["rendered_frames"] % r["window"]["loops"] == 0 and "frame_ns" not in r for r in payloads)
             assert rom.name not in json.dumps(payloads) and str(work) not in json.dumps(payloads)
             assert db.execute("SELECT count(*) FROM attempts WHERE outcome='completed'").fetchone()[0]>=3
         assert "0 queued" in cli("uploads","disable")

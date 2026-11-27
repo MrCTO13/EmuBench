@@ -27,7 +27,7 @@ Result schema 2 carries all of the above. Schema 1 results (short windows, hashi
 
 - **Device score**: pinned reference emulators (exact hashes) on your hardware. Per console, geometric mean over the suite scenes of (x-real-speed / reference x-real-speed) × 1000, then geometric mean over consoles. The reference device is 1000.
 - **Emulator score**: `emubench score RESULTS... --baseline REFERENCE_RESULTS...` pairs an emulator with the reference emulator on the same machine, so the hardware cancels out. 1000 = as fast as the reference emulator.
-- **Accuracy**: its own number. A console only counts toward a speed score when its scenes matched the reference images and it passed the pinned minimum checks.
+- **Accuracy**: its own number, over every check that ran, failures included. A console only counts toward a speed score when every scene matched its frame-exact reference checkpoints and the emulator passes every pinned check that the console's reference emulator passes (`required_checks` in `emubench/reference_eb1.json`). A check the reference itself fails (for example Snes9x on "65C816 basic") does not block the speed score, but it still counts in the Accuracy number.
 - **Playable %**: share of scenes at ≥ 1.0× with the 1% low at or above the native frame rate.
 
 A headline is only given when every console in the suite scored; otherwise it reads "partial (n/m consoles)". The reference ladder lives in `emubench/reference_eb1.json` and is **not calibrated yet**: no Device score is produced until the lab measures the reference device (RG35XX SP class, H700, fixed governor, plugged in) and archives its binaries and traces. Carter Circuit stays out of EmuBench 1 as a synthetic PPU sub-score because its loops idle in a VBlank wait.

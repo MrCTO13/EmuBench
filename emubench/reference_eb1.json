@@ -1,5 +1,5 @@
 {
-  "suite_version": "eb1-draft-1",
+  "suite_version": "eb1-draft-2",
   "note": "Reference ladder for EmuBench 1. Each console is measured in the lab on its reference device with a pinned emulator build, and the exact binaries and frame traces are archived with the suite. Until a console has scenes here it is uncalibrated and no Device score is given.",
   "consoles": {
     "snes": {"device": "Anbernic RG35XX SP (Allwinner H700, performance governor, plugged in)", "emulator": "Snes9x", "version": null, "core_sha256": null, "scenes": {}},

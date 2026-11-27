@@ -1,6 +1,9 @@
 #ifndef _WIN32
 #define _POSIX_C_SOURCE 200809L
 #endif
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE  /* POSIX mode hides pthread QoS declarations otherwise. */
+#endif
 #include "libretro.h"
 #include <stdio.h>
 #include <stdarg.h>

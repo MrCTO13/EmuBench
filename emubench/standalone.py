@@ -59,11 +59,15 @@ def receipt(emulator, version, digest, frames, elapsed, hz, checkpoints, idle, c
 def run_series(measure, args):
     from . import repeats
     with slot("score-series.lock"):
-        runs = [measure(args) for _ in range(repeats.COUNT)]
+        runs = []
+        for index in range(repeats.COUNT):
+            if index:
+                repeats.cool_down()
+            runs.append(measure(args))
     for key in ("emulator","runner_sha256","frames","refresh_hz","content_sha256"):
         if len({r[key] for r in runs}) != 1:
             raise ValueError("Standalone workload changed between passes")
-    report = repeats.summarize([r["elapsed_ns"] for r in runs], args.frames)
+    report = repeats.summarize([r["elapsed_ns"] for r in runs], args.frames, [r["conditions"] for r in runs])
     data = runs[report["selected"]]
     from . import attest, scores, uploads
     console = "psx" if data["emulator"]=="DuckStation" else "gba"

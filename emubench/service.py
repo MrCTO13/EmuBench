@@ -25,7 +25,7 @@ def post(path,data,headers):
 
 def publish(public):
     if public.get("repeatability",{}).get("accepted") is False:
-        raise ValueError("Three-pass spread exceeds 10%")
+        raise ValueError("Series failed the acceptance gate: "+", ".join(public["repeatability"].get("rejected_for") or ["spread"]))
     if public.get("mode")=="standalone-process-v1" and not public.get("render_checkpoints"):
         raise ValueError("The standalone runner lacks framebuffer checkpoints")
     key,bearer=attest.identity()

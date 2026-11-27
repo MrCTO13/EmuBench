@@ -1,15 +1,55 @@
-"""Three fresh processes, the median-throughput pass and a predeclared spread gate."""
+"""Three fresh processes, the median-throughput pass and a predeclared acceptance gate.
+
+A pass only counts when its timed window is at least MIN_WINDOW_MS long, the three
+passes agree within MAX_SPREAD and no pass ran hot or throttled. Rejected series are
+kept locally with the reason, never ranked.
+"""
+import os
 from statistics import median
+import time
 
 COUNT = 3
-MAX_SPREAD = 0.10
+MAX_SPREAD = 0.03
+MIN_WINDOW_MS = int(os.environ.get("EMUBENCH_MIN_WINDOW_MS_OVERRIDE", "10000"))
+COOL_DOWN_S = float(os.environ.get("EMUBENCH_COOL_DOWN_S", "5"))
+HOT = ("serious", "critical")
 
 
-def summarize(elapsed, frames):
-    if len(elapsed)!=COUNT or any(type(ns) is not int or ns<=0 for ns in elapsed):
+def cool_down():
+    """Idle between passes so each process starts from a similar thermal state."""
+    if COOL_DOWN_S > 0:
+        time.sleep(COOL_DOWN_S)
+
+
+def thermal_problem(windows):
+    for window in windows or ():
+        for side in ("before", "after"):
+            state = (window or {}).get(side) or {}
+            if state.get("thermal_state") in HOT:
+                return "hot"
+            if state.get("throttled") is True:
+                return "throttled"
+    return None
+
+
+def summarize(elapsed, frames, conditions=None):
+    if len(elapsed) != COUNT or any(type(ns) is not int or ns <= 0 for ns in elapsed):
         raise ValueError("Expected three independent positive durations")
-    rates = [1e9*frames/ns for ns in elapsed]
+    counts = list(frames) if isinstance(frames, (list, tuple)) else [frames] * COUNT
+    if len(counts) != COUNT or any(type(n) is not int or n <= 0 for n in counts):
+        raise ValueError("Expected three positive frame counts")
+    rates = [1e9 * n / ns for n, ns in zip(counts, elapsed)]
     middle = median(rates)
-    spread = (max(rates)-min(rates))/middle
-    return {"elapsed_ns":elapsed, "selected":rates.index(middle),
-            "relative_spread":spread, "accepted":spread<=MAX_SPREAD}
+    spread = (max(rates) - min(rates)) / middle
+    reasons = []
+    if spread > MAX_SPREAD:
+        reasons.append("spread")
+    if min(elapsed) < MIN_WINDOW_MS * 1_000_000:
+        reasons.append("short-window")
+    problem = thermal_problem(conditions)
+    if problem:
+        reasons.append(problem)
+    return {"elapsed_ns": elapsed, "frames": counts, "selected": rates.index(middle),
+            "relative_spread": spread, "max_spread": MAX_SPREAD,
+            "min_window_ns": MIN_WINDOW_MS * 1_000_000,
+            "accepted": not reasons, "rejected_for": reasons}

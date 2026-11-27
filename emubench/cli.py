@@ -289,11 +289,13 @@ def main(argv=None):
             print(f"{result['emulator']} {result['version']} · {result['rendered_frames']} rendered frames\n"
                   f"Accuracy      {accuracy.coverage(result)}\n"
                   f"Console speed {result['speed_x']:.2f}× ({result['video_mode']['refresh_hz']:.6f} Hz)\n"
+                  f"Native target {result['video_mode']['refresh_hz']:.2f} FPS ({result['video_mode']['region']})\n"
                   f"Three-pass spread {result['repeatability']['relative_spread']:.1%} "
-                  f"({'accepted' if result['repeatability']['accepted'] else 'rejected'})\n"
+                  f"({'accepted' if result['repeatability']['accepted'] else 'rejected: '+', '.join(result['repeatability'].get('rejected_for',[]))})\n"
+                  f"Timed window  {sum(result['frame_ns'])/1e9:.1f} s ({result['rendered_frames']} frames)\n"
                   f"Average FPS   {result['average_fps']:.0f}\n"
                   f"1% low FPS    {result['low_1pct_fps']:.0f}\n"
-                  f"1% high FPS   {result['high_1pct_fps']:.0f}\nPrivate result: {path}")
+                  f"Minimum FPS   {result['min_fps']:.0f}\nPrivate result: {path}")
             uploads.flush(limit=3)
         else:
             public = scores.public_fields(json.loads(args.result.read_text(encoding="utf-8")), args.game)

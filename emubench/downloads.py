@@ -272,12 +272,36 @@ def obtain(spec, attempt=0):
         dest = root / file_sha / filename
         dest.parent.mkdir(exist_ok=True)
         if not dest.exists() or engines.digest(dest) != file_sha:
-            os.replace(payload, dest)
+            try:
+                os.replace(payload, dest)
+            except PermissionError:
+                # A parallel download already placed the same verified file (Windows).
+                if not (dest.is_file() and engines.digest(dest) == file_sha):
+                    raise
         meta = {**asdict(spec), "archive_sha256": archive_sha, "file_sha256": file_sha}
         staged_receipt = stage / "receipt.json"
         staged_receipt.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
-        os.replace(staged_receipt, receipt)
+        _publish_receipt(staged_receipt, receipt)
         return dest, meta
+
+
+def _publish_receipt(staged, receipt):
+    """Windows refuses a replace while another download swaps the same receipt in.
+    Two parallel downloads of one spec write identical receipts, so a receipt that
+    already matches is fine; otherwise retry briefly."""
+    for wait in (0.05, 0.1, 0.2, 0.4, 0.8, None):
+        try:
+            os.replace(staged, receipt)
+            return
+        except PermissionError:
+            try:
+                if receipt.read_bytes() == staged.read_bytes():
+                    return
+            except OSError:
+                pass
+            if wait is None:
+                raise
+            time.sleep(wait)
 
 
 def get(key, target, channel="auto", version="latest", plan=False):

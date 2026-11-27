@@ -428,7 +428,7 @@ int main(int argc, char **argv) {
             last = paced ? now : clock_ns();  // Hashing between frames is never timed.
         }
         if (!loops) first_signature = loop_signature;
-        else if (loop_signature != first_signature) consistent = false;
+        else if (state && loop_signature != first_signature) consistent = false;  // Only restored repeats must match.
         ++loops;
         if (timed_ns >= min_window || total + frames > 1000000) break;
         if (state) {

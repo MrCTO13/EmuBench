@@ -215,7 +215,7 @@ def _measure_once(rom, requested, core, warmup, frames, timeout, ready, expected
                           scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,
                           external=external, expected_digest=rom_hash, video_mode=video_mode,
                           min_window_ms=MIN_WINDOW_MS, no_state=no_state, phase=phase)
-    method = "state"
+    method = "state" if scene else "continue"  # Non-replay workloads keep running new frames.
     try:
         output, checkpoints = attempt()
     except ValueError as exc:

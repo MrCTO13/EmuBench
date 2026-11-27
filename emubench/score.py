@@ -10,9 +10,12 @@ Three headline numbers, never folded together:
   Per console, the geometric mean of (X speed / reference emulator speed) x 1000.
   The hardware cancels out. Public numbers are the median across devices, split by
   CPU architecture, and only verified builds count.
-* Accuracy: its own number. A console only counts toward a speed score when every
-  scene matched its reference checkpoints and the console passed its pinned minimum
-  checks. Speed never buys accuracy points and accuracy never buys speed points.
+* Accuracy: its own number, over every check that ran, failures included. A console
+  only counts toward a speed score when every scene matched its frame-exact reference
+  checkpoints and the emulator passes every pinned check that the console's reference
+  emulator passes (the reference file lists them as required_checks). A check the
+  reference itself fails does not block the speed score, but it still counts in the
+  Accuracy number. Speed never buys accuracy points and accuracy never buys speed points.
 
 Plus Playable %: the share of suite scenes at >= 1.0x average and with the 1% low at
 or above the console's native frame rate. Raw FPS (average, 1% low, minimum) and the
@@ -28,7 +31,7 @@ from pathlib import Path
 from . import carter
 
 SUITE = "EmuBench 1 (draft)"
-VERSION = "eb1-draft-1"
+VERSION = "eb1-draft-2"
 REFERENCE_SCORE = 1000
 
 # Gameplay replays are the headline. Carter Circuit is a synthetic PPU sub-score
@@ -36,11 +39,6 @@ REFERENCE_SCORE = 1000
 SCENES = {
     "snes": tuple(s.profile for s in carter.SCENES if s.console == "snes"),
     "gba": tuple(s.profile for s in carter.SCENES if s.console == "gba"),
-}
-# Pinned minimum checks per console for the accuracy gate.
-REQUIRED_CHECKS = {
-    "snes": ("65C816 basic", "SPC700"),
-    "gba": ("ARM", "Thumb", "Memory"),
 }
 
 
@@ -50,6 +48,17 @@ def reference():
     if data.get("suite_version") != VERSION:
         raise ValueError("Reference file belongs to another suite version")
     return data
+
+
+def calibrated(ref, console):
+    """A console is calibrated once its scenes and the checks its reference passed are pinned."""
+    pinned = ref["consoles"].get(console) or {}
+    return bool(pinned.get("scenes")) and isinstance(pinned.get("required_checks"), list)
+
+
+def required_checks(ref, console):
+    """The accuracy gate: every pinned check the console's reference emulator passed."""
+    return tuple(ref["consoles"][console]["required_checks"]) if calibrated(ref, console) else None
 
 
 def geomean(values):
@@ -70,15 +79,21 @@ def playable(result):
     return result["speed_x"] >= 1.0 and result["low_1pct_fps"] + 0.5 >= target
 
 
-def accuracy(results):
-    """Separate accuracy number: tested checks passed, plus the per-console gate."""
+def accuracy(results, ref=None):
+    """Separate accuracy number over every tested check, plus the per-console gate.
+
+    The gate only asks for the checks the reference passed; an uncalibrated console
+    has no gate (None)."""
+    ref = ref or reference()
     by_console = {}
     for r in results:
         checks = {**r.get("accuracy", {}).get("checks", {}), **r.get("chips", {})}
         by_console.setdefault(console_of(r), {}).update(checks)
     tested = [v for checks in by_console.values() for v in checks.values() if v in ("pass", "fail")]
-    gate = {c: all(by_console.get(c, {}).get(k) == "pass" for k in REQUIRED_CHECKS.get(c, ()))
-            for c in by_console}
+    gate = {}
+    for c in by_console:
+        required = required_checks(ref, c) if c in ref["consoles"] else None
+        gate[c] = None if required is None else all(by_console[c].get(k) == "pass" for k in required)
     return {"percent": round(100 * sum(v == "pass" for v in tested) / len(tested), 1) if tested else None,
             "tested": len(tested), "gate": gate}
 
@@ -109,12 +124,12 @@ def device_score(results, ref=None):
     """Results from the pinned reference emulators on one device."""
     ref = ref or reference()
     scenes = _usable(results)
-    gate = accuracy(results)["gate"]
+    gate = accuracy(results, ref)["gate"]
     consoles, missing = {}, []
     for console, profiles in SCENES.items():
         pinned = ref["consoles"].get(console)
         runs = [scenes.get(p) for p in profiles]
-        if not pinned or not pinned.get("scenes"):
+        if not calibrated(ref, console):
             missing.append((console, "reference not measured yet"))
             continue
         if any(r is None for r in runs):
@@ -128,16 +143,20 @@ def device_score(results, ref=None):
             continue
         consoles[console] = round(REFERENCE_SCORE * geomean(
             r["speed_x"] / pinned["scenes"][r["profile"]] for r in runs))
-    return _headline(consoles, missing, scenes)
+    return _headline(consoles, missing, scenes, ref)
 
 
-def emulator_score(results, baseline):
+def emulator_score(results, baseline, ref=None):
     """Emulator X (results) against the reference emulator (baseline) on the same device."""
+    ref = ref or reference()
     ours, theirs = _usable(results), _usable(baseline)
-    gate = accuracy(results)["gate"]
+    gate = accuracy(results, ref)["gate"]
     consoles, missing = {}, []
     for console, profiles in SCENES.items():
         pairs = [(ours.get(p), theirs.get(p)) for p in profiles]
+        if not calibrated(ref, console):
+            missing.append((console, "reference not measured yet"))
+            continue
         if any(a is None or b is None for a, b in pairs):
             missing.append((console, _why_missing(results + baseline, profiles)))
             continue
@@ -148,10 +167,10 @@ def emulator_score(results, baseline):
             missing.append((console, "failed the accuracy gate"))
             continue
         consoles[console] = round(REFERENCE_SCORE * geomean(a["speed_x"] / b["speed_x"] for a, b in pairs))
-    return _headline(consoles, missing, ours)
+    return _headline(consoles, missing, ours, ref)
 
 
-def _headline(consoles, missing, scenes):
+def _headline(consoles, missing, scenes, ref):
     runs = list(scenes.values())
     complete = not missing and len(consoles) == len(SCENES)
     return {"suite": SUITE, "suite_version": VERSION,
@@ -159,7 +178,7 @@ def _headline(consoles, missing, scenes):
             "partial": None if complete else f"partial ({len(consoles)}/{len(SCENES)} consoles)",
             "consoles": consoles, "missing": dict(missing),
             "playable_percent": round(100 * sum(map(playable, runs)) / len(runs)) if runs else None,
-            "accuracy": accuracy(runs), "scenes": [raw(r) for r in runs]}
+            "accuracy": accuracy(runs, ref), "scenes": [raw(r) for r in runs]}
 
 
 def load(paths):

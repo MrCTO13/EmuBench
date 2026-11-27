@@ -22,7 +22,14 @@ def suite(factor, sha="a", **kw):
 
 
 REF = {"suite_version": score.VERSION, "consoles": {
-    c: {"core_sha256": "a" * 64, "scenes": {p: float(i + 1) for i, p in enumerate(ps)}} for c, ps in score.SCENES.items()}}
+    c: {"core_sha256": "a" * 64, "scenes": {p: float(i + 1) for i, p in enumerate(ps)},
+        "required_checks": ["65C816 basic", "SPC700"] if c == "snes" else ["ARM", "Thumb", "Memory"]}
+    for c, ps in score.SCENES.items()}}
+# A reference that fails some of its own checks: the gate only asks for what it passed.
+PARTIAL_REF = copy.deepcopy(REF)
+PARTIAL_REF["consoles"]["snes"]["required_checks"] = ["SPC700"]
+PARTIAL_REF["consoles"]["gba"]["required_checks"] = ["Memory"]
+ALL_PASS = {"65C816 basic": "pass", "SPC700": "pass", "ARM": "pass", "Thumb": "pass", "Memory": "pass"}
 
 
 class EB1(unittest.TestCase):
@@ -55,10 +62,42 @@ class EB1(unittest.TestCase):
         self.assertLess(r["accuracy"]["percent"], 100)
         self.assertIn("pinned reference", score.device_score(suite(1.0, sha="b"), REF)["missing"]["snes"])
 
+    def test_check_the_reference_fails_does_not_block(self):
+        checks = {**ALL_PASS, "65C816 basic": "fail", "ARM": "fail", "Thumb": "fail"}
+        r = score.device_score(suite(1.0, checks=checks), PARTIAL_REF)
+        self.assertEqual(r["score"], 1000)
+        self.assertEqual(r["accuracy"]["gate"], {"snes": True, "gba": True})
+        # Known reference failures still count in the separate Accuracy number.
+        self.assertEqual(r["accuracy"]["tested"], 10)  # five checks on each console
+        self.assertEqual(r["accuracy"]["percent"], 40.0)
+        e = score.emulator_score(suite(2.0, sha="b", checks=checks), suite(1.0, checks=checks), PARTIAL_REF)
+        self.assertEqual(e["score"], 2000)
+
+    def test_regression_on_a_check_the_reference_passes_blocks(self):
+        checks = {**ALL_PASS, "SPC700": "fail"}
+        r = score.device_score(suite(1.0, checks=checks), PARTIAL_REF)
+        self.assertIsNone(r["score"])
+        self.assertIn("accuracy gate", r["missing"]["snes"])
+        self.assertEqual(r["consoles"], {"gba": 1000})
+        self.assertEqual(r["accuracy"]["percent"], 80.0)
+        e = score.emulator_score(suite(2.0, sha="b", checks=checks), suite(1.0), PARTIAL_REF)
+        self.assertIn("accuracy gate", e["missing"]["snes"])
+        # A check that was never run does not count as passed for the gate.
+        unrun = {k: v for k, v in ALL_PASS.items() if k != "Memory"}
+        self.assertIn("accuracy gate", score.device_score(suite(1.0, checks=unrun), PARTIAL_REF)["missing"]["gba"])
+
+    def test_uncalibrated_console_has_no_gate(self):
+        empty = copy.deepcopy(PARTIAL_REF)
+        del empty["consoles"]["gba"]["required_checks"]
+        r = score.device_score(suite(1.0), empty)
+        self.assertIn("reference not measured", r["missing"]["gba"])
+        self.assertIsNone(r["accuracy"]["gate"]["gba"])
+        self.assertIn("reference not measured", score.emulator_score(suite(2.0, sha="b"), suite(1.0), empty)["missing"]["gba"])
+
     def test_emulator_score_cancels_hardware(self):
-        self.assertEqual(score.emulator_score(suite(3.0, sha="b"), suite(2.0))["score"], 1500)
+        self.assertEqual(score.emulator_score(suite(3.0, sha="b"), suite(2.0), REF)["score"], 1500)
         other = suite(2.0, device="Other / 8c")
-        self.assertIsNone(score.emulator_score(suite(3.0, sha="b"), other)["score"])
+        self.assertIsNone(score.emulator_score(suite(3.0, sha="b"), other, REF)["score"])
 
     def test_playable_needs_average_and_1pct_low(self):
         self.assertTrue(score.playable(run(score.SCENES["snes"][0], 1.2)))
@@ -67,9 +106,18 @@ class EB1(unittest.TestCase):
         self.assertEqual(r["playable_percent"], 67)  # 0.5x scene fails, 1.0x and 1.5x pass
         self.assertTrue(all("native_fps" in s and "min_fps" in s for s in r["scenes"]))
 
-    def test_shipped_reference_is_honestly_uncalibrated(self):
+    def test_shipped_reference_is_well_formed(self):
         ref = score.reference()
-        self.assertTrue(all(not c["scenes"] for c in ref["consoles"].values()))
+        for console, pinned in ref["consoles"].items():
+            if not score.calibrated(ref, console):
+                self.assertFalse(pinned.get("scenes"))
+                continue
+            self.assertEqual(set(pinned["scenes"]), set(score.SCENES[console]))
+            self.assertTrue(all(v > 0 for v in pinned["scenes"].values()))
+            self.assertRegex(pinned["core_sha256"], "^[0-9a-f]{64}$")
+            # The gate is exactly what the reference passed in its own recorded accuracy run.
+            checks = pinned["reference_accuracy"]["checks"]
+            self.assertEqual(sorted(pinned["required_checks"]), sorted(k for k, v in checks.items() if v == "pass"))
 
 
 if __name__ == "__main__":

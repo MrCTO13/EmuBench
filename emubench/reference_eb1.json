@@ -1,8 +1,51 @@
 {
-  "suite_version": "eb1-draft-1",
-  "note": "Reference ladder for EmuBench 1. Each console is measured in the lab on its reference device with a pinned emulator build, and the exact binaries and frame traces are archived with the suite. Until a console has scenes here it is uncalibrated and no Device score is given.",
+  "suite_version": "eb1-draft-2",
+  "note": "Reference ladder for EmuBench 1. Each console is measured in the lab on its reference device with a pinned emulator build; scenes are x-real-console-speed from accepted 3-pass runs (spread <= 3%, 10 s window). required_checks is the accuracy gate: exactly the pinned checks the reference build passed in its own run (reference_accuracy, failures included). Measured 2026-11-27 on an RG35XX SP class H700 (performance governor, on USB power, SoC cooled below 78 C before each scene), timing worker b55710dc. Until a console has scenes here it is uncalibrated and no Device score is given.",
   "consoles": {
-    "snes": {"device": "Anbernic RG35XX SP (Allwinner H700, performance governor, plugged in)", "emulator": "Snes9x", "version": null, "core_sha256": null, "scenes": {}},
-    "gba": {"device": "Anbernic RG35XX SP (Allwinner H700, performance governor, plugged in)", "emulator": "mGBA", "version": "0.10.5", "core_sha256": null, "scenes": {}}
+    "snes": {
+      "device": "Anbernic RG35XX SP (Allwinner H700, performance governor, plugged in)",
+      "emulator": "Snes9x",
+      "version": "libretro nightly 2026-11-27+85d6ca7d",
+      "core_sha256": "86a9e0cacb8ae13ee90c40c711991692a5463cc9a2c8dc8c2a2d1b27b00d208d",
+      "scenes": {
+        "snes-carter-easy-v1": 2.9266,
+        "snes-carter-normal-v1": 3.0708,
+        "snes-carter-hard-v1": 3.0496
+      },
+      "required_checks": [
+        "SPC700"
+      ],
+      "reference_accuracy": {
+        "suite": "cpu-memory-v1",
+        "worker_sha256": "b55710dc8e619a849c109b7f77be9ae386d8ad94c3d27fd22af6d7bd20065f6e",
+        "checks": {
+          "65C816 basic": "fail",
+          "SPC700": "pass"
+        }
+      }
+    },
+    "gba": {
+      "device": "Anbernic RG35XX SP (Allwinner H700, performance governor, plugged in)",
+      "emulator": "mGBA",
+      "version": "0.10.5",
+      "core_sha256": "1d0ac685a93d3218a561720c502808a062b6fee3d80a9b22d46686a18e130f4a",
+      "scenes": {
+        "gba-carter-easy-v1": 2.3801,
+        "gba-carter-normal-v1": 2.2842,
+        "gba-carter-hard-v1": 2.2097
+      },
+      "required_checks": [
+        "Memory"
+      ],
+      "reference_accuracy": {
+        "suite": "cpu-memory-v1",
+        "worker_sha256": "b55710dc8e619a849c109b7f77be9ae386d8ad94c3d27fd22af6d7bd20065f6e",
+        "checks": {
+          "ARM": "fail",
+          "Thumb": "fail",
+          "Memory": "pass"
+        }
+      }
+    }
   }
 }

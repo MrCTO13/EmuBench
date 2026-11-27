@@ -6,7 +6,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from nacl.signing import SigningKey
-from . import engines
+from . import engines, fsutil
 
 def identity():
     root=engines.home()
@@ -20,11 +20,11 @@ def identity():
                 out.flush()
                 os.fsync(out.fileno())
             try:
-                os.link(tmp,path)
+                fsutil.publish_new(tmp,path)
             except FileExistsError:
                 pass
         finally:
-            Path(tmp).unlink()
+            Path(tmp).unlink(missing_ok=True)
     data=path.read_bytes()
     if len(data)!=64:
         raise ValueError("Invalid installation identity")

@@ -1,19 +1,19 @@
-// Public title examples guide BYO coverage. They are distinct from the official synthetic score.
+// Consoles and emulators available for local bring-your-own runs. No commercial titles are listed.
 const libraryPlan = [
- ["NES","Nestopia UE, FCEUmm","Super Mario Bros.; Super Mario Bros. 3; Kirby’s Adventure; Castlevania III"],
- ["Super NES","CartsSNES, Snes9x, bsnes","Super Mario World; Super Mario Kart; Star Fox; Super Mario RPG; Super Mario World 2: Yoshi’s Island; Street Fighter Alpha 2"],
- ["Game Boy","SameBoy, Gambatte","Tetris; Super Mario Land; The Legend of Zelda: Link’s Awakening"],
- ["Game Boy Color","SameBoy, Gambatte","Pokémon Crystal; The Legend of Zelda: Oracle of Ages; Shantae"],
- ["Game Boy Advance","mGBA, gpSP","F-Zero: Maximum Velocity; Metroid Fusion; Golden Sun; Mario Kart: Super Circuit"],
- ["Master System","Gearsystem, Genesis Plus GX, PicoDrive","Alex Kidd in Miracle World; Phantasy Star; Sonic the Hedgehog"],
- ["Game Gear","Gearsystem, Genesis Plus GX, PicoDrive","Columns; Shinobi; Sonic the Hedgehog: Triple Trouble"],
- ["Genesis / Mega Drive","Genesis Plus GX, PicoDrive","Sonic the Hedgehog 2; Gunstar Heroes; Virtua Racing"],
- ["Atari 2600","Stella","Adventure; Pitfall!; River Raid"],
- ["PC Engine","Beetle PCE Fast, Beetle SuperGrafx","Bonk’s Adventure; Blazing Lazers; R-Type"],
- ["SuperGrafx","Beetle SuperGrafx","Aldynes; Ghouls ’n Ghosts; 1941: Counter Attack"],
- ["PC Engine CD","Beetle PCE Fast, Beetle SuperGrafx","Castlevania: Rondo of Blood; Ys Book I & II; Gate of Thunder"],
- ["PlayStation","DuckStation, PCSX-ReARMed","Ridge Racer; Tekken 3; Gran Turismo 2"],
- ["Neo Geo","FinalBurn Neo, MAME","Metal Slug; The King of Fighters ’98; Garou: Mark of the Wolves"]
+ ["NES","Nestopia UE, FCEUmm"],
+ ["Super NES","Snes9x, bsnes, CartsSNES (closed, not ranked)"],
+ ["Game Boy","SameBoy, Gambatte"],
+ ["Game Boy Color","SameBoy, Gambatte"],
+ ["Game Boy Advance","mGBA, gpSP"],
+ ["Master System","Gearsystem, Genesis Plus GX, PicoDrive"],
+ ["Game Gear","Gearsystem, Genesis Plus GX, PicoDrive"],
+ ["Genesis / Mega Drive","Genesis Plus GX, PicoDrive"],
+ ["Atari 2600","Stella"],
+ ["PC Engine","Beetle PCE Fast, Beetle SuperGrafx"],
+ ["SuperGrafx","Beetle SuperGrafx"],
+ ["PC Engine CD","Beetle PCE Fast, Beetle SuperGrafx"],
+ ["PlayStation","DuckStation, PCSX-ReARMed"],
+ ["Neo Geo","FinalBurn Neo, MAME"]
 ];
 function libraryPage(){
   info("Game library","Get the Carter games, or pick a console to see which emulators can run your own ROMs.");
@@ -30,9 +30,7 @@ function libraryPage(){
           g.console==="n64"?g.title:link(g.title,"/?q="+encodeURIComponent(g.title)),systems[g.console],g.edition,
           g.console==="n64"?"Game only": ["Cartervania","Super Carter Bros. 3"].includes(g.title)?"Gameplay replay":"Local ROM"]),"Carter game editions"));
     }
-    if(filter.value!=="Nintendo 64")out.append(make("h2","Bring your own games"));
-    for(const [name,peers,names] of libraryPlan.filter(r=>filter.value==="all"||r[0]===filter.value)){
-    out.append(make("h3",name),make("p",name==="PlayStation"?"PCSX-ReARMed reports individual frame times. DuckStation’s regression runner reports a separate average.":"Emulators · "+peers));
-    const ul=make("ul");for(const game of names.split("; ")){const li=make("li");li.append(link(game,"/?q="+encodeURIComponent(game)));ul.append(li);}out.append(ul);
-  }}filter.onchange=display;display();
+    if(filter.value!=="Nintendo 64"){out.append(make("h2","Bring your own games"),make("p","Your own cartridge dumps can be timed locally with these emulators. Personal ROM results stay on your device and never count toward official scores."));
+    out.append(table(["Console","Emulators"],libraryPlan.filter(r=>filter.value==="all"||r[0]===filter.value).map(([name,peers])=>[name,name==="PlayStation"?peers+" · DuckStation reports one average":peers]),"Bring-your-own emulators"));}
+  }filter.onchange=display;display();
 }

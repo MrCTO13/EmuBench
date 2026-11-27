@@ -135,4 +135,16 @@ def coverage(result):
     outcomes = {**result.get("accuracy",{}).get("checks",{}), **result.get("chips",{})}
     if not expected or not outcomes:
         return "Untested"
-    return f"{sum(outcomes.get(k)=='pass' for k in expected)}/{len(expected)} checks passed"
+    return label(expected, outcomes)
+
+
+def label(expected, outcomes):
+    """Never fold untested or unreadable checks into a pass fraction."""
+    counts = {"pass": 0, "fail": 0, "unresolved": 0, "not run": 0}
+    for name in expected:
+        value = outcomes.get(name)
+        counts[value if value in ("pass", "fail", "unresolved") else "not run"] += 1
+    if counts["pass"] == len(expected):
+        return f"{len(expected)}/{len(expected)} checks passed"
+    words = {"pass": "passed", "fail": "failed", "unresolved": "unreadable", "not run": "not run"}
+    return " · ".join(f"{n} {words[k]}" for k, n in counts.items() if n)

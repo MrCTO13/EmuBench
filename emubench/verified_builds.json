@@ -1,0 +1,4 @@
+{
+  "note": "Exact core files the lab matched to an official upstream release or signed nightly. Filled by lab review only; empty until the first reviewed lab runs.",
+  "builds": {}
+}

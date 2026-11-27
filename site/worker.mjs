@@ -12,26 +12,46 @@ function validateHostAndPasses(r,end){
   requireValue(fields(r.idle,["state","cpu_percent"]) && Number.isFinite(r.idle.cpu_percent)
     && r.idle.cpu_percent>=0 && r.idle.cpu_percent<=100 && r.idle.state===(r.idle.cpu_percent>=25?"busy":"idle"));
   const hw=r.hardware, modelName=s=>plain(s,160,/^[^\u0000-\u001f\u007f]+$/u);
-  requireValue(fields(hw,["model","ram_bytes","os_build","physical_cores","core_types","gpu"])
+  requireValue(fields(hw,["device_class","cpufreq","model","ram_bytes","os_build","physical_cores","core_types","gpu"])
+    && modelName(hw.device_class)
+    && (hw.cpufreq===undefined || Array.isArray(hw.cpufreq) && hw.cpufreq.length<=8 && hw.cpufreq.every(f=>fields(f,["governor","min_khz","max_khz"])
+      && plain(f.governor,32,/^[a-z0-9_-]+$/) && integer(f.min_khz,0,1e8) && integer(f.max_khz,f.min_khz,1e8)))
     && (hw.model===null || modelName(hw.model)) && modelName(hw.os_build) && integer(hw.ram_bytes,1,2**52)
     && (hw.physical_cores===null || integer(hw.physical_cores,1,65536))
     && hw.core_types && typeof hw.core_types==="object" && !Array.isArray(hw.core_types)
     && Object.entries(hw.core_types).every(([k,n])=>plain(k,50,/^[a-zA-Z0-9 -]+$/) && integer(n,1,65536))
     && Array.isArray(hw.gpu) && hw.gpu.length<=16 && hw.gpu.every(modelName));
-  const sensor=s=>fields(s,["thermal_state","temperature_c","throttled","throttle_count","power_source","low_power"])
+  const sensor=s=>fields(s,["thermal_state","temperature_c","throttled","throttle_count","power_source","low_power","cpu_mhz"])
+    && (s.cpu_mhz===undefined || s.cpu_mhz===null || integer(s.cpu_mhz,1,100000))
     && [null,"nominal","fair","serious","critical"].includes(s.thermal_state)
     && [null,"ac","battery"].includes(s.power_source) && [null,true,false].includes(s.low_power)
     && [null,true,false].includes(s.throttled) && (s.throttle_count===null || integer(s.throttle_count,0,1e15))
     && (s.temperature_c===null || Number.isFinite(s.temperature_c) && s.temperature_c>=-40 && s.temperature_c<=150);
   requireValue(Array.isArray(r.conditions) && r.conditions.length===3 && r.conditions.every(w=>fields(w,["before","after"]) && sensor(w.before) && sensor(w.after)));
+  // Schema 2 gate: >= 10 s timed per pass, three passes within 3%, no hot or throttled pass.
   const repeat=r.repeatability;
-  requireValue(fields(repeat,["elapsed_ns","selected","relative_spread","accepted"])
+  requireValue(fields(repeat,["elapsed_ns","frames","selected","relative_spread","max_spread","min_window_ns","accepted","rejected_for"])
     && Array.isArray(repeat.elapsed_ns) && repeat.elapsed_ns.length===3 && repeat.elapsed_ns.every(ns=>integer(ns,1,1e15))
-    && integer(repeat.selected,0,2) && repeat.accepted===true);
-  const durations=[...repeat.elapsed_ns].sort((a,b)=>a-b), mid=durations[1];
-  const spread=(1/durations[0]-1/durations[2])*mid;
-  requireValue(repeat.elapsed_ns[repeat.selected]===mid && Math.abs(mid-end*1e6)<1
-    && Number.isFinite(repeat.relative_spread) && Math.abs(spread-repeat.relative_spread)<1e-9 && spread<=0.10);
+    && Array.isArray(repeat.frames) && repeat.frames.length===3 && repeat.frames.every(n=>integer(n,1,1e6))
+    && integer(repeat.selected,0,2) && repeat.accepted===true && Array.isArray(repeat.rejected_for) && !repeat.rejected_for.length
+    && repeat.max_spread===MAX_SPREAD && repeat.min_window_ns===MIN_WINDOW_NS);
+  const rates=repeat.elapsed_ns.map((ns,i)=>repeat.frames[i]/ns), sorted=[...rates].sort((a,b)=>a-b), mid=sorted[1];
+  const spread=(sorted[2]-sorted[0])/mid;
+  requireValue(rates[repeat.selected]===mid && Math.abs(repeat.elapsed_ns[repeat.selected]-end*1e6)<1e3
+    && repeat.elapsed_ns.every(ns=>ns>=MIN_WINDOW_NS)
+    && Number.isFinite(repeat.relative_spread) && Math.abs(spread-repeat.relative_spread)<1e-9 && spread<=MAX_SPREAD);
+  requireValue(r.conditions.every(w=>[w.before,w.after].every(s=>!["serious","critical"].includes(s.thermal_state) && s.throttled!==true)));
+}
+const MAX_SPREAD=0.03, MIN_WINDOW_NS=10e9;
+// Frames i in [0,n) the worker hashed: (i+phase) % 17 === 0.
+function sampledFrames(n,phase){const first=(17-phase)%17;return first<n?Math.floor((n-1-first)/17)+1:0;}
+// Builds the lab verified against upstream (signed buildbot SHA or tagged release),
+// keyed by core SHA-256. Anything else is a custom build: shown, never ranked.
+// Closed builds nobody else can download are never ranked either.
+function standing(r){
+  if(CLOSED_EMULATORS.includes(r.emulator))return "closed";
+  const v=Object.hasOwn(VERIFIED_BUILDS,r.core_sha256)&&VERIFIED_BUILDS[r.core_sha256];
+  return v && v.emulator===r.emulator && v.version===r.version ? "verified" : "custom";
 }
 export function validate(r) {
   if (r?.outcome==="failed") {
@@ -45,7 +65,7 @@ export function validate(r) {
   if(r.mode==="standalone-process-v1"){
     requireValue(fields(r,["run_id","device_id","comparison_id","game","profile","mode","emulator","version","source_commit",
       "core_sha256","worker_sha256","os","arch","cpu","average_fps","speed_x","warmup_frames","rendered_frames","elapsed_ns",
-      "render_checkpoints","video_mode","hardware","idle","conditions","repeatability"]));
+      "render_checkpoints","video_mode","hardware","idle","conditions","repeatability"]) && !("standing" in r));
     requireValue(r.emulator==="DuckStation" && r.profile==="psx-standalone-process-v1" && r.source_commit===null
       && [r.run_id,r.device_id,r.comparison_id].every(id=>plain(id,36,UUID)) && plain(r.game,90,TEXT)
       && plain(r.version,100,/^[a-zA-Z0-9 .()+_-]+$/) && plain(r.core_sha256,64,SHA) && plain(r.worker_sha256,64,SHA)
@@ -62,7 +82,10 @@ export function validate(r) {
   }
   requireValue(fields(r,["run_id","game","profile","emulator","version","source_commit","core_sha256","worker_sha256",
     "os","arch","cpu","warmup_frames","rendered_frames","average_fps","low_1pct_fps","high_1pct_fps","timing",
-    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution","speed_x","video_mode","mode","frame_check","idle","repeatability","conditions","hardware"]));
+    "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution","speed_x","video_mode","mode","frame_check","idle","repeatability","conditions","hardware","window","min_fps"]));
+  const w=r.window;
+  requireValue(fields(w,["loops","timed_ns","minimum_ns","loops_identical"]) && integer(w.loops,1,1e6) && w.minimum_ns===MIN_WINDOW_NS
+    && integer(w.timed_ns,MIN_WINDOW_NS,1e15) && w.loops_identical===true && r.rendered_frames%w.loops===0 && integer(r.min_fps,0,1e8) && r.min_fps<=r.low_1pct_fps);
   requireValue(Object.hasOwn(CORE_CONSOLES,r.emulator) && plain(r.run_id,36,UUID) && plain(r.game,90,TEXT));
   requireValue(["Darwin","Linux","Windows"].includes(r.os) && /^(arm64|aarch64|amd64|x86_64)$/i.test(r.arch));
   requireValue(plain(r.cpu,160,CPU) && plain(r.version,80,/^[a-zA-Z0-9 ()._+-]+$/) && SHA.test(r.core_sha256)
@@ -73,7 +96,7 @@ export function validate(r) {
   const profile = Object.hasOwn(PROFILES,r.profile) && PROFILES[r.profile];
   if (profile) {
     requireValue(profile.console === emulators[r.emulator] && r.game === profile.title && r.scene_description === profile.description
-      && r.rendered_frames === profile.frames && r.warmup_frames === profile.warmup
+      && r.rendered_frames === profile.frames*r.window.loops && r.warmup_frames === profile.warmup
       && profile.references.some(pair => JSON.stringify(pair) === JSON.stringify(r.scene_checkpoints)));
   } else {
     requireValue(CORE_CONSOLES[r.emulator].some(c=>r.profile===c+"-boot-no-input-v1") && !r.scene_checkpoints && !r.scene_description);
@@ -87,11 +110,12 @@ export function validate(r) {
       && integer(bin.worst_frame,frame+1,r.rendered_frames) && integer(bin.avg_fps,0,1e8) && integer(bin.worst_fps,0,1e8));
     end=bin.end_ms; frame=bin.worst_frame;
   }
-  requireValue(Math.abs(r.average_fps-1000*r.rendered_frames/end)<=1);
+  requireValue(Math.abs(r.average_fps-1000*r.rendered_frames/end)<=1 && Math.abs(r.window.timed_ns-end*1e6)<1e3*r.timing.length);
   validateHostAndPasses(r,end);
   const check=r.frame_check;
-  requireValue(fields(check,["method","samples","changes","signature"]) && check.method==="full-fnv64-17"
-    && check.samples===Math.ceil(r.rendered_frames/17) && integer(check.changes,1,check.samples-1)
+  const perLoop=r.rendered_frames/r.window.loops, phase=check?.phase;
+  requireValue(fields(check,["method","samples","changes","signature","phase"]) && check.method==="copy-fnv64-17r" && integer(phase,0,16)
+    && check.samples===r.window.loops*sampledFrames(perLoop,phase) && integer(check.changes,1,check.samples-1)
     && /^[0-9a-f]{16}$/.test(check.signature));
   const mode=r.video_mode, handheld=["gb","gbc","gba"].includes(r.profile.split("-")[0]);
   requireValue(r.mode==="libretro" && fields(mode,["region","refresh_hz","source"]) && Number.isFinite(mode.refresh_hz)

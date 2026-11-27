@@ -18,6 +18,10 @@
 #include <unistd.h>
 #include <errno.h>
 #endif
+#ifdef __APPLE__
+#include <pthread.h>
+#include <pthread/qos.h>
+#endif
 
 /* The core runs in a dedicated child process. Python never enters the timed loop. */
 static struct {
@@ -274,6 +278,10 @@ int main(int argc, char **argv) {
     _setmode(_fileno(stdin), _O_BINARY);
     if (!QueryPerformanceFrequency(&frequency) || !QueryPerformanceCounter(&origin))
         return fail("Performance clock unavailable");
+#endif
+#ifdef __APPLE__
+    /* Keep the timed thread on performance cores where macOS allows it. */
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 #endif
     int lock_status = claim_slot();
     if (lock_status) return lock_status;

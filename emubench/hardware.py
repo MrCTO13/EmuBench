@@ -62,6 +62,34 @@ def linux_clusters():
     return counts
 
 
+def linux_cpufreq():
+    """Governor and frequency limits. The same SoC under another governor scores differently."""
+    root=Path("/sys/devices/system/cpu")
+    policies=sorted(root.glob("cpufreq/policy[0-9]*")) or sorted(root.glob("cpu[0-9]*/cpufreq"))
+    found=[]
+    for policy in policies:
+        governor=read(policy/"scaling_governor")
+        lo,hi=read(policy/"scaling_min_freq"),read(policy/"scaling_max_freq")
+        if governor and lo.isdigit() and hi.isdigit():
+            found.append({"governor":governor[:32],"min_khz":int(lo),"max_khz":int(hi)})
+    unique=[dict(t) for t in dict.fromkeys(tuple(sorted(f.items())) for f in found)]
+    return unique[:8]
+
+
+def device_class(model, cpu, cores):
+    """Normalized key so different installs on the same hardware group together.
+
+    Example keys: "Apple M2 Pro / 12c", "Allwinner H700 / Anbernic RG35XX SP / 4c".
+    """
+    cpu=re.sub(r"\s+"," ",re.sub(r"\((?:R|TM)\)|CPU|Processor|@.*$","",cpu or "",flags=re.I)).strip()
+    parts=[cpu or "Unknown CPU"]
+    if model and sys.platform.startswith("linux") and model.lower() not in cpu.lower():
+        parts.append(model)  # Device-tree board name for handhelds and SBCs.
+    if cores:
+        parts.append(f"{cores}c")
+    return " / ".join(p[:80] for p in parts)[:160]
+
+
 @lru_cache(maxsize=1)
 def fingerprint():
     clusters={}
@@ -101,6 +129,11 @@ def fingerprint():
                 vendor,device=read(card/"device/vendor"),read(card/"device/device")
                 if vendor and device:
                     gpu.append(vendor+":"+device)
-    return {"model":model[:160] or None,"ram_bytes":psutil.virtual_memory().total,
+    from .scores import cpu_model
+    cores=psutil.cpu_count(logical=False)
+    extra={"device_class":device_class(model,cpu_model(),cores)}
+    if sys.platform.startswith("linux"):
+        extra["cpufreq"]=linux_cpufreq()
+    return {**extra,"model":model[:160] or None,"ram_bytes":psutil.virtual_memory().total,
             "os_build":build[:120],"physical_cores":psutil.cpu_count(logical=False),
             "core_types":clusters,"gpu":[name[:160] for name in dict.fromkeys(gpu)][:16]}

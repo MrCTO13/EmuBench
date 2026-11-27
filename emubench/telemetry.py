@@ -48,7 +48,7 @@ def mac_power(result):
 
 
 def snapshot():
-    result=dict(thermal_state=None,temperature_c=None,throttled=None,throttle_count=None,power_source=None,low_power=None)
+    result=dict(thermal_state=None,temperature_c=None,throttled=None,throttle_count=None,power_source=None,low_power=None,cpu_mhz=None)
     if sys.platform=="darwin":
         mac_power(result)
     elif os.name=="nt":
@@ -73,6 +73,9 @@ def snapshot():
         counts=[read(p) for p in Path("/sys/devices/system/cpu").glob("cpu[0-9]*/thermal_throttle/core_throttle_count")]
         if counts and all(c.isdigit() for c in counts):
             result["throttle_count"]=sum(map(int,counts))
+        freqs=[read(p) for p in Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq/scaling_cur_freq")]
+        if freqs and all(f.isdigit() for f in freqs):
+            result["cpu_mhz"]=round(max(map(int,freqs))/1000)
         profile=read("/sys/firmware/acpi/platform_profile")
         if profile:
             result["low_power"]=profile in ("low-power","quiet")

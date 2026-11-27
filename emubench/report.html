@@ -22,10 +22,16 @@ const embedded=local?JSON.parse(local):null;
 const snapshot=Array.isArray(embedded);
 const runs=[];
 function speedLabel(r){return Number.isFinite(r.speed_x)?r.speed_x.toFixed(2)+'×':'Unscored'}
+function checkLabel(names,outcomes){
+  const c={passed:0,failed:0,unreadable:0,"not run":0};
+  for(const k of names){const v=outcomes[k];c[v==="pass"?"passed":v==="fail"?"failed":v==="unresolved"?"unreadable":"not run"]++;}
+  if(c.passed===names.length)return names.length+"/"+names.length+" checks passed";
+  return Object.entries(c).filter(([,n])=>n).map(([k,n])=>n+" "+k).join(" · ");
+}
 function diagnosticCount(r){
-  const values=Object.values({...r.accuracy?.checks,...r.chips});
-  const count=r.profile.startsWith("snes-")?5:r.profile.startsWith("gba-")?3:values.length;
-  return values.length?values.filter(v=>v==="pass").length+"/"+count+" checks passed":"Untested";
+  const outcomes={...r.accuracy?.checks,...r.chips};
+  const names=r.profile.startsWith("snes-")?["65C816 basic","SPC700","SA-1 multiply","Super FX immediate","DSP-1 fixed-point multiply"]:r.profile.startsWith("gba-")?["ARM","Thumb","Memory"]:Object.keys(outcomes);
+  return Object.keys(outcomes).length?checkLabel(names,outcomes):"Untested";
 }
 function validAccuracy(r) {
   if (!r.accuracy) return true;

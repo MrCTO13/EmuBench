@@ -9,7 +9,7 @@ const axe = require("axe-core");
 async function run() {
   const name = process.argv[3] || "chrome";
   const engine = {chrome: chromium, firefox, webkit}[name];
-  const server = spawn(process.execPath, ["--experimental-sqlite", "tests/local_api.mjs", process.argv[2]],
+  const server = spawn(process.execPath, ["--experimental-sqlite", "tests/local_api.mjs", process.argv[2], "--seed"],
     {stdio: ["ignore", "pipe", "inherit"]});
   let browser;
   try {
@@ -26,8 +26,8 @@ async function run() {
       await page.evaluate(() => document.fonts.ready);
     }
     const sample = "00000000-0000-4000-8000-000000000004";
-    const routes = ["/", "/compare?q=Super+Mario+World&demo=1", "/rankings?demo=1", "/history?demo=1",
-      "/library", "/method", "/run/" + sample + "?demo=1", "/campaign/" + sample, "/?q=missing"];
+    const routes = ["/", "/compare?q=Carter+Circuit", "/rankings", "/history",
+      "/library", "/method", "/run/" + sample, "/campaign/" + sample, "/?q=missing"];
     for (const width of [1280, 768, 390, 320]) {
       await page.setViewportSize({width, height: 820});
       for (const route of routes) {
@@ -62,10 +62,11 @@ async function run() {
         }
       }
     }
-    await visit("/?demo=1");
-    await page.getByLabel("Game or ROM name").fill("Super Mario World");
+    await visit("/");
+    assert.match(await page.locator("footer").innerText(), /CartsSNES/);
+    await page.getByLabel("Game or ROM name").fill("Carter Circuit");
     await page.getByRole("button", {name: "Search", exact: true}).click();
-    await page.waitForURL(/q=Super/);
+    await page.waitForURL(/q=Carter/);
     await page.getByRole("button", {name: "Compare selected emulators"}).click();
     await page.waitForURL(/compare/);
     assert.equal(await page.locator("fieldset label:visible").count(), 3);
@@ -73,7 +74,7 @@ async function run() {
     await peer.uncheck();
     assert.equal(await page.locator("tbody tr").filter({hasText: "Snes9x"}).count(), 0);
     await peer.check();
-    await page.getByRole("link", {name: "Super Mario World (USA)", exact: true}).first().click();
+    await page.getByRole("link", {name: "Carter Circuit (SNES easy)", exact: true}).first().click();
     const cursor = page.getByRole("slider");
     await cursor.focus();
     await cursor.press("End");
@@ -84,7 +85,7 @@ async function run() {
     await page.getByRole("combobox", {name: "Console", exact: true}).selectOption("Nintendo 64");
     assert.equal(await page.locator("tbody tr").count(), 1);
     assert.match(await page.locator("tbody").innerText(), /Final Cartasy/);
-    await visit("/rankings?demo=1");
+    await visit("/rankings");
     await page.getByText("See the 24 selected games").click();
     assert.equal(await page.locator("#results details tbody tr").count(), 24);
     await visit("/run/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");

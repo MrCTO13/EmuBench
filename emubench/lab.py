@@ -132,7 +132,7 @@ def validate_receipt(study_list,receipt):
     expected={(g["edition"],p) for group in study["groups"] for g in group["games"] for p in builds}
     seen=set()
     for row in receipt["rows"]:
-        if ("speed_x" in row and not (isinstance(row["speed_x"],(int,float)) and 0<row["speed_x"]<1e6)) or ("accuracy_label" in row and not re.fullmatch(r"Untested|[0-9]{1,2}/[0-9]{1,2} checks passed",row["accuracy_label"])) or set(row)-{"speed_x","accuracy_label"}!={"edition","emulator","run_id","version","average_fps","low_1pct_fps","high_1pct_fps"}:
+        if ("speed_x" in row and not (isinstance(row["speed_x"],(int,float)) and 0<row["speed_x"]<1e6)) or ("accuracy_label" in row and not re.fullmatch(r"Untested|[0-9]{1,2}/[0-9]{1,2} checks passed|[0-9]{1,2} [a-z ]+( · [0-9]{1,2} [a-z ]+)*",row["accuracy_label"])) or set(row)-{"speed_x","accuracy_label"}!={"edition","emulator","run_id","version","average_fps","low_1pct_fps","high_1pct_fps"}:
             raise ValueError("Unexpected public game fields")
         pair=(row["edition"],row["emulator"])
         if pair not in expected or row["run_id"] in seen or not re.fullmatch(r"[a-zA-Z0-9 ()._+-]{1,80}",row["version"]):

@@ -51,5 +51,6 @@ async function signedRun(req,key) {
   const constrained=/cortex-a(?:35|53|55)|intel.*atom/i.test(r.cpu);
   const ceiling=constrained?30000:200000;
   if(!r.outcome)requireValue(r.average_fps<=ceiling && (r.high_1pct_fps??r.average_fps)<=4*ceiling);
-  return {...r,proof:{key,record:e.record,seal:e.seal,signature:e.signature}};
+  // Standing is decided here from the build hash, never taken from the client.
+  return {...r,standing:standing(r),proof:{key,record:e.record,seal:e.seal,signature:e.signature}};
 }

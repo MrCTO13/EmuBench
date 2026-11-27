@@ -219,8 +219,7 @@ div.empty { display: flex; flex-wrap: wrap; align-items: baseline; justify-conte
 meter::-webkit-meter-bar { height: 9px; background: #dde6ee; border: 0; border-radius: 0; }
 meter::-webkit-meter-optimum-value { background: var(--blue); }
 meter::-moz-meter-bar { background: var(--blue); }
-.demo { padding: .6rem 1rem; background: #fff1c6; border-left: 3px solid #936b17; max-width: none; font-size: .92rem; margin: 0 0 12px; }
-.demo a { margin-left: 8px; }
+footer .disclosure { max-width: 72ch; font-size: .85rem; opacity: .85; margin: 8px 0 0; }
 #status:not(:empty) { padding: 10px 0; color: var(--muted); }
 code, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .note, small, footer { color: var(--muted); }

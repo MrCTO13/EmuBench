@@ -16,5 +16,5 @@ with tempfile.TemporaryDirectory() as tmp:
         run = scores.measure(rom,None,Path(sys.argv[1]),120,600,30,emulator="snes9x")
         mode = run["video_mode"]
         assert mode["region"] == region and abs(mode["refresh_hz"]-hz)<0.1, mode
-        assert run["speed_x"] == 1e9*600/(sum(run["frame_ns"])*mode["refresh_hz"])
+        assert run["speed_x"] == 1e9*len(run["frame_ns"])/(sum(run["frame_ns"])*mode["refresh_hz"])
         print(region, mode["refresh_hz"], "Hz")

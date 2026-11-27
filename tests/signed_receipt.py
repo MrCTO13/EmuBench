@@ -18,7 +18,7 @@ with subprocess.Popen(["node","--experimental-sqlite","tests/local_api.mjs",sys.
                 try:
                     service.publish(public)
                 except ValueError as exc:
-                    assert "spread" in str(exc)
+                    assert "acceptance gate" in str(exc), exc
                 else:
                     raise AssertionError("Unstable timing was accepted")
                 continue

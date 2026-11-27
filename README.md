@@ -4,7 +4,7 @@ A local-first command-line benchmark for macOS, Windows and Linux. It measures r
 
 ## Who runs EmuBench
 
-EmuBench is built and run by the GitHub account MrCTO13. The same person develops CARTS, a commercial emulator project that includes the CartsSNES core, and made the Carter homebrew games and Carter Circuit scenes used as official workloads. To keep that from tilting the results: the method and every workload are open source, every emulator runs in the same harness, CartsSNES is a closed build and is never ranked, and results where CARTS is slower are published the same way as results where it is faster.
+EmuBench is built and run by Mr.CTO (GitHub account MrCTO13). The same person develops CARTS, a commercial emulator project that includes the CartsSNES core, and made the Carter homebrew games and Carter Circuit scenes used as official workloads. To keep that from tilting the results: the method and every workload are open source, every emulator runs in the same harness, CartsSNES is a closed build and is never ranked, and results where CARTS is slower are published the same way as results where it is faster.
 
 ## How a score is measured (single source of truth)
 

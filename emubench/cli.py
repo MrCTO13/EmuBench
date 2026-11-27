@@ -48,6 +48,10 @@ def main(argv=None):
     run.add_argument("--frames", type=int, default=1800)
     run.add_argument("--timeout", type=int, default=300, help="Worker timeout in seconds")
     run.add_argument("--out", type=Path, help="Private result JSON destination")
+    eb1 = commands.add_parser("score", help="EmuBench 1 headline scores from saved Carter replay results")
+    eb1.add_argument("results", type=Path, nargs="+", help="Private result JSON files for one emulator build on one device")
+    eb1.add_argument("--baseline", type=Path, nargs="+", help="Reference-emulator results from the same device (Emulator score)")
+    eb1.add_argument("--json", action="store_true", help="Print the full report as JSON")
     publish = commands.add_parser("publish", help="Review and publish a public score")
     publish.add_argument("result", type=Path)
     publish.add_argument("--game", default="Personal ROM", help="Optional public display title")
@@ -133,6 +137,15 @@ def main(argv=None):
             if not args.system_dir.is_dir():
                 raise ValueError("--system-dir requires a local directory")
             os.environ["EMUBENCH_SYSTEM_DIR"]=str(args.system_dir.resolve())
+        if args.command == "score":
+            from . import score
+            runs = score.load(args.results)
+            if args.baseline:
+                report, kind = score.emulator_score(runs, score.load(args.baseline)), "Emulator score"
+            else:
+                report, kind = score.device_score(runs), "Device score"
+            print(json.dumps(report, indent=2) if args.json else score.describe(report, kind))
+            return 0
         if args.command == "games":
             if args.action == "list":
                 games.list_games()

@@ -28,6 +28,8 @@ subprocess.run([sys.executable, "-m", "PyInstaller", "--onefile", "--clean", "--
                 *extra, "--paths", ".", "--name", "emubench", "--hidden-import", "_cffi_backend",
                 "--add-data", "emubench/carter_games.json" + os.pathsep + "emubench",
                 "--add-data", "emubench/studies.json" + os.pathsep + "emubench",
+                "--add-data", "emubench/verified_builds.json" + os.pathsep + "emubench",
+                "--add-data", "emubench/reference_eb1.json" + os.pathsep + "emubench",
                 "--add-data", "emubench/desktop.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/report.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/chart.js" + os.pathsep + "emubench",

@@ -2,6 +2,36 @@
 
 A local-first command-line benchmark for macOS, Windows and Linux. It measures rendered frames from boot with neutral input for mGBA (Game Boy Advance) and Snes9x, bsnes and a locally supplied CartsSNES core (Super NES).
 
+## Who runs EmuBench
+
+EmuBench is built and run by the GitHub account MrCTO13. The same person develops CARTS, a commercial emulator project that includes the CartsSNES core, and made the Carter homebrew games and Carter Circuit scenes used as official workloads. To keep that from tilting the results: the method and every workload are open source, every emulator runs in the same harness, CartsSNES is a closed build and is never ranked, and results where CARTS is slower are published the same way as results where it is faster.
+
+## How a score is measured (single source of truth)
+
+This section is the method. Where any other part of this README gives a different number, this section wins.
+
+1. **Same harness for every emulator.** A small native libretro worker loads the core in its own process. No frame skipping, no audio device, no run-ahead. Each timed advance must produce exactly one software framebuffer.
+2. **Only the emulator is timed.** Every 17th frame (at a random phase per run) is copied inside the video callback, the copy time is measured and subtracted, and the copy is hashed after `retro_run` returns. The harness's own checks never land in a frame time or the 1% low.
+3. **At least 10 seconds per pass.** After warm-up the scene's frames are timed. If that took under 10 s, the worker restores a save state taken at the start of the scene and plays the same frames again, until at least 10 s of frames are timed. Every repeat must render identical sampled frames, or the scene is rejected.
+4. **Three fresh processes per score**, with a 5 s cool-down between them. The pass with the median throughput is reported. All three must agree within **3%** (relative spread = (fastest − slowest) / median), every pass must be at least 10 s, and no pass may be reported hot (`serious`/`critical`) or throttled. Anything else stays local with the reason (`spread`, `short-window`, `hot`, `throttled`).
+5. **Raw numbers on every run:** average FPS, 1% low FPS (99th percentile frame time), minimum FPS (slowest single frame), console speed (x real console) and the console's native target (60.10 NTSC SNES, 50.01 PAL SNES, 59.73 GBA).
+6. **Device identity:** device class (CPU + board + core count), RAM, OS build, core types, GPU, Linux cpufreq governor and limits, observed CPU MHz, power source and low-power mode per pass.
+7. **What gets ranked:** only *verified* builds (core SHA-256 listed in `emubench/verified_builds.json` after the lab matched it to an official upstream release or signed nightly), only within one device class and power state, only plugged in and idle. Custom builds are shown but never ranked. CartsSNES is closed, so it is shown as unreproducible and never ranked.
+8. **Smoke checks are not an accuracy score.** The bundled upstream CPU/memory programs are smoke tests. Each shows pass, fail, unreadable or not run, and "not run" is never counted as a failure.
+
+Result schema 2 carries all of the above. Schema 1 results (short windows, hashing inside the timed loop) are kept locally but are never published or compared with schema 2.
+
+## EmuBench 1 score (draft)
+
+`emubench score RESULTS...` turns saved Carter replay results into three separate numbers:
+
+- **Device score**: pinned reference emulators (exact hashes) on your hardware. Per console, geometric mean over the suite scenes of (x-real-speed / reference x-real-speed) × 1000, then geometric mean over consoles. The reference device is 1000.
+- **Emulator score**: `emubench score RESULTS... --baseline REFERENCE_RESULTS...` pairs an emulator with the reference emulator on the same machine, so the hardware cancels out. 1000 = as fast as the reference emulator.
+- **Accuracy**: its own number. A console only counts toward a speed score when its scenes matched the reference images and it passed the pinned minimum checks.
+- **Playable %**: share of scenes at ≥ 1.0× with the 1% low at or above the native frame rate.
+
+A headline is only given when every console in the suite scored; otherwise it reads "partial (n/m consoles)". The reference ladder lives in `emubench/reference_eb1.json` and is **not calibrated yet**: no Device score is produced until the lab measures the reference device (RG35XX SP class, H700, fixed governor, plugged in) and archives its binaries and traces. Carter Circuit stays out of EmuBench 1 as a synthetic PPU sub-score because its loops idle in a VBlank wait.
+
 ## Desktop app
 
 The native Mac and Windows apps use the same measurement engine and on-device history as the CLI. Open EmuBench, pick a workload and emulator, then choose **Run benchmark**. The **History** tab opens frame charts and lets you publish a selected score. The first run downloads the emulator and its diagnostic files. Windows on Arm labels runs that use an x64 emulator. [Downloads and installation](https://emubench.games/download).
@@ -17,7 +47,7 @@ Download the archive for your OS and CPU. macOS, Windows and Linux each have an 
     emubench catalog install snes
     emubench catalog match snes --rom "My Game.sfc"
 
-Carter Circuit v2 has easy, normal and hard scenes on both GBA and SNES. The CLI builds the original code and graphics locally. Each scene measures 600 rendered frames after 120 warm-up frames and checks both boundary images. Each SNES suite also tests the SA-1 signed multiplier and a Super FX immediate register load. The optional paced pass uses the core’s declared refresh and audio sample rates. A missed deadline is a frame completed after its scheduled end. Missing audio sample frames count headless buffer starvation after an initial two-frame reserve. Physical display presentation and device audio are outside this measurement.
+Carter Circuit v2 has easy, normal and hard scenes on both GBA and SNES. The CLI builds the original code and graphics locally. Each scene times its 600 frames after 120 warm-up frames, repeated from a save state to at least 10 s (see the method above), and checks both boundary images. Each SNES suite also tests the SA-1 signed multiplier and a Super FX immediate register load. The optional paced pass uses the core’s declared refresh and audio sample rates. A missed deadline is a frame completed after its scheduled end. Missing audio sample frames count headless buffer starvation after an initial two-frame reserve. Physical display presentation and device audio are outside this measurement.
 
 The public results browser supports game search, matched emulator and hardware comparisons, score timelines, campaign links, build history and matched SNES rankings. The browser explains coverage and the estimator used. Raw cartridge hashes, filenames, paths and frame logs stay local. Each upload includes a random installation token. Known editions can be shared across machines with `--share-title` after installing the catalog. Its public edition identifier derives from the catalog entry name. [Public scoreboard and methodology](https://emubench.games/method).
 
@@ -53,7 +83,7 @@ From a source checkout with Python 3.10 or later, substitute `python -m emubench
 
 ## Measurement
 
-The default window is 120 warm-up frames followed by 1,800 measured frames. Change either with `--warmup-frames` or `--frames`. These are engineering defaults pending a duration and repeatability study. The native worker times software rendering with a monotonic host clock. It supplies neutral input and accepts audio without waiting for playback. The mGBA profile disables frame skipping, BIOS loading and idle-loop removal. The SNES profile uses each core's native software renderer and bundled defaults. bsnes run-ahead is disabled. Each timed advance must produce one non-null software framebuffer of the console's expected dimensions. The worker hashes the full active pixel buffer every seventeenth frame and records an elapsed interval. The checks establish frame delivery. Game accuracy requires an independent reference trace.
+The default window is 120 warm-up frames followed by 1,800 measured frames. Change either with `--warmup-frames` or `--frames`. Every pass is also extended to at least 10 s of timed frames (see the method above). The native worker times software rendering with a monotonic host clock. It supplies neutral input and accepts audio without waiting for playback. The mGBA profile disables frame skipping, BIOS loading and idle-loop removal. The SNES profile uses each core's native software renderer and bundled defaults. bsnes run-ahead is disabled. Each timed advance must produce one non-null software framebuffer of the console's expected dimensions. The worker copies the full active pixel buffer every seventeenth frame (random phase) and hashes it outside the timed interval. The checks establish frame delivery. Game accuracy requires an independent reference trace.
 
 Average FPS is the frame count divided by the total elapsed seconds. The 1% low is the reciprocal of the nearest-rank 99th-percentile frame time. The 1% high uses the 1st percentile. Both are expressed in FPS. Boot, attract screens and gameplay can have very different costs. Compare identical ROM revisions, frame windows, core binaries and hardware when drawing conclusions.
 
@@ -141,7 +171,7 @@ Desktop downloads include 12 original Carter game editions for nine consoles in 
 | GBA · Cartervania | Idle castle entrance | Three standing jumps | Move right, jump and dash |
 | SNES · Super Carter Bros. 3 | Sunlit Shores map | Walk through Sunspill Orchard | Run, jump and dash through the orchard |
 
-Each scene starts from power-on with clean temporary storage. A fixed controller replay reaches the scene, then the host times 180 rendered advances with audio enabled. The runner compares a full-frame hash at the end of setup and on a separate advance after timing against a pinned pair of software reference images (stored as digests). An unexpected image invalidates the scene score. A newer core can require review if its video output changes. The labels describe the work in the scene. Their ordering by host FPS can vary. These short windows are intended for repeatable engineering comparisons. Commercial gameplay coverage, agreement with original console output and minimum duration for marketing claims require separate validation.
+Each scene starts from power-on with clean temporary storage. A fixed controller replay reaches the scene, then the host times 180 rendered advances with audio enabled, repeated from a save state to at least 10 s. The runner compares a full-frame hash at the end of setup and on a separate advance after timing against a pinned pair of software reference images (stored as digests). An unexpected image invalidates the scene score. A newer core can require review if its video output changes. The labels describe the work in the scene. Their ordering by host FPS can vary. These short windows are intended for repeatable engineering comparisons. Commercial gameplay coverage, agreement with original console output and minimum duration for marketing claims require separate validation.
 
 The CLI also runs a versioned set of named upstream diagnostic programs with the same core and worker. It downloads pinned inputs into the local cache, verifies their SHA-256, runs them separately from FPS timing and reads the terminal message using a pattern derived from the upstream font and display position. Each program contributes one result. Pass, fail and unresolved are shown explicitly. The diagnostic total is a count of programs. It makes no estimate of how much of the console is emulated accurately. A standalone accuracy command returns a nonzero status for a failed or unresolved test. A Carter run retains its FPS and its diagnostic outcomes independently.
 
@@ -188,7 +218,7 @@ Carter Circuit v2 adds 64 translucent objects on GBA and four layers with pseudo
 
 Every scored run samples aggregate CPU use for 350 ms before timing. At 25% utilization or higher the run is flagged busy and excluded from rankings. Campaigns additionally monitor their configured idle gate. This preflight measures CPU contention; it does not assert exclusive physical access.
 
-One score now starts three fresh emulator processes. We select the pass with median unrounded throughput and show its trace and whole-number FPS. Relative spread = (fastest − slowest) / median. Spreads above 10% are stored locally and rejected for public scoring. Each local receipt includes all three measured durations. The same rule applies to standalone process timing.
+One score now starts three fresh emulator processes. We select the pass with median unrounded throughput and show its trace and whole-number FPS. Relative spread = (fastest − slowest) / median. Spreads above 3%, passes under 10 s and hot or throttled passes are stored locally and rejected for public scoring. Each local receipt includes all three measured durations. The same rule applies to standalone process timing.
 
 Speed listings identify diagnostic coverage. SNES ranking eligibility requires both upstream CPU/audio programs and all three coprocessor probes to pass on the measured build. A missing, failed or unresolved check withholds the ranking while the individual result stays visible. These are named test outcomes, not a percentage of compatibility with the game library.
 

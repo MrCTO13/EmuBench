@@ -101,6 +101,8 @@ function method(){
     make("h2","What gets ranked"),
     make("p","Only verified builds are ranked: emulator files whose SHA-256 the lab matched to an official upstream release or signed nightly. Modified or self-built emulators show as custom builds and are never ranked. Closed emulators that nobody else can download, including CartsSNES, are shown as unreproducible and never ranked."),
     make("p","Rankings only compare runs from the same device class and power state (plugged in, low-power mode off). Builds are compared on the same installation, scene by scene, and combined with a geometric mean. With five or more installations we show a 95% bootstrap interval."),
+    make("h2","EmuBench 1 score"),
+    make("p","EmuBench 1 is a fixed set of Carter gameplay replays. A reference handheld (RG35XX SP class) running pinned emulators scores 1000. The Device score shows how your hardware compares running those same emulators. The Emulator score compares an emulator with the reference emulator on the same machine, so the hardware cancels out. Accuracy is a separate number and is never mixed into speed. Playable % is the share of scenes that hold full speed, including the 1% low. The reference device is still being measured, so no EmuBench 1 scores are published yet."),
     make("h2","What the smoke checks cover"),
     make("p","Each run can include a few upstream CPU and memory test programs. They are smoke tests, not an accuracy score: most serious emulators pass them all. Each test shows pass, fail, unreadable or not run, and tests that were not run never count as failures. Display, speaker and controller latency need separate hardware tests."),
     link("Read the source","https://github.com/MrCTO13/EmuBench")

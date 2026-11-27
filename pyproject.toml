@@ -20,4 +20,4 @@ emubench-desktop = "emubench.gui:main"
 packages = ["emubench"]
 
 [tool.setuptools.package-data]
-emubench = ["assets/emubench.png", "carter_games.json", "studies.json", "report.html", "desktop.html", "chart.js", "compare.js", "native/*.c", "native/*.h", "native/CMakeLists.txt"]
+emubench = ["assets/emubench.png", "carter_games.json", "verified_builds.json", "reference_eb1.json", "studies.json", "report.html", "desktop.html", "chart.js", "compare.js", "native/*.c", "native/*.h", "native/CMakeLists.txt"]

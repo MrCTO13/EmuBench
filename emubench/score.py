@@ -99,6 +99,12 @@ def _usable(results):
     return scenes
 
 
+def _why_missing(results, profiles):
+    rejected = sorted({why for r in results if r.get("profile") in profiles
+                       for why in r.get("repeatability", {}).get("rejected_for", [])})
+    return "scenes rejected by the timing gate (" + ", ".join(rejected) + ")" if rejected else "missing scenes"
+
+
 def device_score(results, ref=None):
     """Results from the pinned reference emulators on one device."""
     ref = ref or reference()
@@ -112,7 +118,7 @@ def device_score(results, ref=None):
             missing.append((console, "reference not measured yet"))
             continue
         if any(r is None for r in runs):
-            missing.append((console, "missing scenes"))
+            missing.append((console, _why_missing(results, profiles)))
             continue
         if any(r["core_sha256"] != pinned["core_sha256"] for r in runs):
             missing.append((console, "not the pinned reference emulator"))
@@ -133,7 +139,7 @@ def emulator_score(results, baseline):
     for console, profiles in SCENES.items():
         pairs = [(ours.get(p), theirs.get(p)) for p in profiles]
         if any(a is None or b is None for a, b in pairs):
-            missing.append((console, "missing scenes"))
+            missing.append((console, _why_missing(results + baseline, profiles)))
             continue
         if any(a["hardware"] != b["hardware"] or a["worker_sha256"] != b["worker_sha256"] for a, b in pairs):
             missing.append((console, "not measured on the same device and harness"))

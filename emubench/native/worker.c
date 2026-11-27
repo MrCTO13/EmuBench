@@ -371,6 +371,9 @@ int main(int argc, char **argv) {
         state_size = core.serialize_size();
         state = state_size ? malloc(state_size) : NULL;
         if (state && !core.serialize(state, state_size)) { free(state); state = NULL; }
+        /* Some cores (bsnes) synchronize internal threads while saving. Restore at once
+           so every timed repeat, including the first, starts from the same state. */
+        if (state && !core.unserialize(state, state_size)) return fail("Core could not restore the scene start");
     }
 #ifdef _WIN32
     uint64_t pid = GetCurrentProcessId();

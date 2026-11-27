@@ -13,10 +13,13 @@ import tempfile
 import time
 import uuid
 
-from . import adapters, carter, circuit, details, engines, identify, journal, library
+from . import adapters, carter, circuit, conditions, telemetry, hardware, details, engines, identify, journal, library
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
+# Schema 2: frame hashing outside the timed region, 10 s minimum window, 3% gate.
+# Schema 1 results are kept locally but never published or compared with schema 2.
+SCHEMA = 2
 
 
 ADAPTERS = {key:(name, adapters.profile(adapters.CONSOLES[name][0])) for key,name in adapters.NAMES.items()}
@@ -55,24 +58,36 @@ def stats(times):
     n = len(times)
     return {"average_fps": round(1e9 * n / sum(times)),
             "low_1pct_fps": round(1e9 / ordered[(99 * n + 99) // 100 - 1]),
-            "high_1pct_fps": round(1e9 / ordered[(n + 99) // 100 - 1])}
+            "high_1pct_fps": round(1e9 / ordered[(n + 99) // 100 - 1]),
+            "min_fps": round(1e9 / ordered[-1])}
 
 
 class InterruptedWindow(InterruptedError):
     """The device became busy or another worker owns the measurement slot."""
 
 
-def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False, filename=None, external=None, expected_digest=None, force_color=False):
+HEADER = 9  # EB3 evidence header lines before the frame times.
+
+
+def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False, filename=None, external=None, expected_digest=None, force_color=False, video_mode=None, min_window_ms=0, no_state=False, phase=None):
     engines.home().mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
            "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
+    from .standalone import slot
     # File handles avoid pipe back-pressure while the parent watches idle state.
-    with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryFile() as source, \
+    with slot(), tempfile.TemporaryDirectory() as folder, tempfile.TemporaryFile() as source, \
          tempfile.TemporaryFile() as errors:
         root = Path(folder)
         env.pop("EMUBENCH_STAGED",None)
         env.pop("EMUBENCH_CONTENT_NAME",None)
         env.pop("EMUBENCH_FORCE_COLOR",None)
+        env.pop("EMUBENCH_SAMPLE_PHASE",None)
+        env.pop("EMUBENCH_NO_STATE",None)
+        env["EMUBENCH_MIN_WINDOW_MS"] = str(int(min_window_ms))
+        if no_state:
+            env["EMUBENCH_NO_STATE"] = "1"
+        if phase is not None:
+            env["EMUBENCH_SAMPLE_PHASE"] = str(int(phase))
         if force_color:
             env["EMUBENCH_FORCE_COLOR"]="1"
         if filename:
@@ -116,7 +131,8 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
                 if proc.returncode == 75:
                     raise InterruptedWindow("Another measurement is active on this device")
                 if proc.returncode:
-                    errors.seek(0)
+                    end = errors.seek(0, os.SEEK_END)
+                    errors.seek(max(0, end - 1000))
                     raise ValueError(f"{emulator} worker exited {proc.returncode}. "
                                      + errors.read(1000).decode(errors="replace").strip())
                 if ready and not ready():
@@ -124,6 +140,9 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
             finally:
                 if proc.poll() is None:
                     proc.kill()
+        if video_mode is not None:
+            region, rate = (root / "video-rate").read_text().split()
+            video_mode.update(region={"0":"NTSC","1":"PAL"}[region], refresh_hz=float(rate))
         evidence = (root / "frame-evidence").read_text(encoding="ascii").splitlines()
         if paced:
             return evidence, (root / "paced-result").read_text().split()
@@ -134,6 +153,27 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
 
 
 def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_rom=None, emulator="mgba", scene=None, member=None):
+    from . import repeats, standalone
+    with standalone.slot("score-series.lock"):
+        runs = []
+        for index in range(repeats.COUNT):
+            if index:
+                repeats.cool_down()
+            run = _measure_once(rom,requested,core,warmup,frames,timeout,ready,expected_rom,emulator,scene,member)
+            if runs and any(run[k]!=runs[0][k] for k in ("core_sha256","worker_sha256","rom_sha256","video_mode","profile")):
+                raise ValueError("Emulator, ROM or video mode changed between passes")
+            runs.append(run)
+    report = repeats.summarize([sum(r["frame_ns"]) for r in runs], [len(r["frame_ns"]) for r in runs],
+                               [r["conditions"] for r in runs])
+    selected = runs[report["selected"]]
+    selected["hardware"] = hardware.fingerprint()
+    selected["conditions"] = [r["conditions"] for r in runs]
+    selected["repeatability"] = report
+    selected["idle"] = max((r["idle"] for r in runs), key=lambda i:i["cpu_percent"])
+    return selected
+
+
+def _measure_once(rom, requested, core, warmup, frames, timeout, ready, expected_rom, emulator, scene, member):
     if not 100 <= frames <= 1_000_000 or not 0 <= warmup <= 1_000_000 or timeout <= 0:
         raise ValueError("Use 100–1,000,000 measured frames, 0–1,000,000 warm-up frames and a positive timeout")
     name, profile = ADAPTERS[emulator]
@@ -165,12 +205,40 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     core_hash = engines.digest(core)
     worker,translated = engines.timing_worker(core)
     worker_hash = engines.digest(worker)
-    output, checkpoints = run_worker(worker, core, data, warmup, frames, timeout, ready, name,
-                                     scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,
-                                     external=external, expected_digest=rom_hash)
+    video_mode = {}
+    before = telemetry.snapshot()
+    idle = conditions.idle()
+    from .repeats import min_window_ms
+    MIN_WINDOW_MS = min_window_ms()
+    def attempt(no_state=False, phase=None):
+        return run_worker(worker, core, data, warmup, frames, timeout, ready, name,
+                          scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,
+                          external=external, expected_digest=rom_hash, video_mode=video_mode,
+                          min_window_ms=MIN_WINDOW_MS, no_state=no_state, phase=phase)
+    method = "state" if scene else "continue"  # Non-replay workloads keep running new frames.
+    try:
+        output, checkpoints = attempt()
+    except ValueError as exc:
+        # A core whose save state crashes on this platform: repeat the replay in fresh
+        # processes instead. Each process boots and replays identically.
+        if not scene or "worker exited" not in str(exc):
+            raise
+        method = "process"
+        output, checkpoints = attempt(no_state=True)
+    output = _evidence(output, frames)
+    if scene and output["loops"] == 1 and sum(output["times"]) < MIN_WINDOW_MS * 1_000_000:
+        method = "process"
+        while sum(output["times"]) < MIN_WINDOW_MS * 1_000_000 and len(output["times"]) + frames <= 1_000_000:
+            more, more_checkpoints = attempt(no_state=True, phase=output["phase"])
+            more = _evidence(more, frames)
+            identical = (more["fingerprint"] == output["fingerprint"] and more_checkpoints == checkpoints
+                         and more["version"] == output["version"])
+            output.update(times=output["times"] + more["times"], loops=output["loops"] + more["loops"],
+                          samples=output["samples"] + more["samples"], changes=output["changes"] + more["changes"],
+                          audio=output["audio"] + more["audio"], consistent=output["consistent"] and more["consistent"] and identical)
     if core_hash != engines.digest(core) or worker_hash != engines.digest(worker):
         raise ValueError("Core or timing worker changed during measurement")
-    scene_evidence = {}
+    scene_evidence = {'idle':idle,'conditions':telemetry.window(before)}
     if not scene and console in identify.CATALOGS:
         edition = identify.match(console, data)
         if edition:
@@ -178,13 +246,17 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
     if scene:
         scene_evidence["scene_checkpoints"] = scene.validate(rom_hash, warmup, frames, checkpoints)
         profile = scene.profile
-    if len(output) != frames + 5 or output[0] != "EB2":
-        raise ValueError("Incomplete frame evidence")
-    version, audio, fingerprint, visual_changes = output[1:5]
+    version, audio, fingerprint, visual_changes = output["version"], output["audio"], output["fingerprint"], output["changes"]
+    loops, samples, phase, consistent = output["loops"], output["samples"], output["phase"], output["consistent"]
+    if scene and not consistent:
+        raise ValueError("Repeated scene passes rendered different frames (non-deterministic core or save state)")
     if tag and version != tag:
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
-    times = list(map(int, output[5:]))
-    return {**({"execution":"x64-on-arm64"} if translated else {}), **({"build_recipe":"mgba-libretro-cmake-v1"} if tag else {}), **scene_evidence, "schema": 1, "id": str(uuid.uuid4()), "profile": profile,
+    times = output["times"]
+    video_mode = reference_mode(console, video_mode)
+    scene_evidence.update(frame_check=dict(method="copy-fnv64-17r", samples=samples, changes=int(visual_changes), signature=fingerprint, phase=int(phase)),
+                          window=dict(loops=loops, timed_ns=sum(times), minimum_ns=MIN_WINDOW_MS*1_000_000, loops_identical=consistent, repeat=method), mode="libretro", video_mode=video_mode, speed_x=speed(times, video_mode))
+    return {**({"execution":"x64-on-arm64"} if translated else {}), **({"build_recipe":"mgba-libretro-cmake-v1"} if tag else {}), **scene_evidence, "schema": SCHEMA, "id": str(uuid.uuid4()), "profile": profile,
             "comparison_id": journal.comparison_id(rom_hash), "device_id": journal.comparison_id("installation"),
             "emulator": name, "version": version, "source_commit": commit,
             "core_sha256": core_hash, "worker_sha256": worker_hash,
@@ -193,6 +265,17 @@ def measure(rom, requested, core, warmup, frames, timeout, ready=None, expected_
             "warmup_frames": warmup, "frames": frames, "rendered_frames": len(times),
             "sampled_frame_changes": int(visual_changes), "audio_sample_frames": int(audio), "pixel_sample_signature": fingerprint,
             "frame_ns": times, **stats(times)}
+
+
+def _evidence(lines, frames):
+    if len(lines) < HEADER + frames or lines[0] != "EB3":
+        raise ValueError("Incomplete frame evidence")
+    version, audio, fingerprint, changes, loops, consistent, phase, samples = lines[1:HEADER]
+    loops = int(loops)
+    if len(lines) != HEADER + frames * loops:
+        raise ValueError("Incomplete frame evidence")
+    return dict(version=version, audio=int(audio), fingerprint=fingerprint, changes=int(changes), loops=loops,
+                consistent=consistent == "1", phase=int(phase), samples=int(samples), times=list(map(int, lines[HEADER:])))
 
 
 def paced_pass(result, core, rom, timeout):
@@ -233,6 +316,25 @@ def save(result, destination):
     return destination
 
 
+def reference_mode(console, mode):
+    rate = mode["refresh_hz"]
+    if not 20 <= rate <= 240:
+        raise ValueError("Emulator did not report a usable console refresh rate")
+    if console in ("gb", "gbc", "gba"):
+        return {"region":"handheld", "refresh_hz":4194304 / 70224, "source":"lcd-clock"}
+    if console=="snes":
+        # Progressive display modes from upstream Snes9x snes9x.h. Cores can
+        # round their return value differently for the same physical mode.
+        ref={"NTSC":60.09881389744051,"PAL":50.006977968}[mode["region"]]
+        if abs(rate-ref)<0.03:
+            return {"region":mode["region"],"refresh_hz":ref,"source":"snes-progressive"}
+    return {"region":mode["region"], "refresh_hz":rate, "source":"emulator-av"}
+
+
+def speed(times, mode):
+    return 1e9 * len(times) / (sum(times) * mode["refresh_hz"])
+
+
 def public_title(title):
     if not isinstance(title, str) or not 1 <= len(title.strip()) <= 90 or any(
             not (c.isalnum() or c in " .,'’()+&!_-") for c in title):
@@ -241,6 +343,9 @@ def public_title(title):
 
 
 def public_fields(result, title):
+    if result.get('mode')=='standalone-process-v1':
+        from . import standalone
+        return standalone.public_fields(result,title)
     from .accuracy import validated
     official = circuit.PROFILES.get(result["profile"])
     scene = official or carter.PROFILES.get(result["profile"])
@@ -251,7 +356,7 @@ def public_fields(result, title):
                    and result["warmup_frames"] == scene.warmup and result["frames"] == (circuit.FRAMES if official else carter.FRAMES)
                    and tuple(result.get("scene_checkpoints", ())) in scene.references)
         title = scene.title
-    if result["schema"] != 1 or not allowed:
+    if result["schema"] != SCHEMA or not allowed:
         raise ValueError("Unknown result format")
     edition = result.get("catalog_match") if result.get("share_title") is True and not scene else None
     if edition:
@@ -267,7 +372,8 @@ def public_fields(result, title):
         (result["source_commit"] is not None and not engines.SHA.fullmatch(result["source_commit"]))):
         raise ValueError("Invalid build metadata")
     n = len(result["frame_ns"])
-    if (result["frames"] != n or result["rendered_frames"] != n or
+    loops = result.get("window", {}).get("loops")
+    if (type(loops) is not int or loops < 1 or result["frames"] * loops != n or result["rendered_frames"] != n or
         type(result["warmup_frames"]) is not int or not 0 <= result["warmup_frames"] <= 1_000_000 or
         type(result["audio_sample_frames"]) is not int or result["audio_sample_frames"] <= 0):
         raise ValueError("Incomplete frame evidence")
@@ -275,6 +381,21 @@ def public_fields(result, title):
     if not isinstance(cpu, str) or not 1 <= len(cpu) <= 160 or not cpu.isprintable():
         raise ValueError("Invalid processor model")
     cohort = {"edition":edition["edition"]} if edition else {}
+    if "video_mode" in result:
+        cohort.update(mode="libretro",video_mode=result["video_mode"], speed_x=speed(result["frame_ns"], result["video_mode"]))
+    if "hardware" in result:
+        cohort["hardware"] = result["hardware"]
+    if "conditions" in result:
+        cohort["conditions"] = result["conditions"]
+    if "repeatability" in result:
+        cohort["repeatability"] = result["repeatability"]
+    if "idle" in result:
+        cohort["idle"] = result["idle"]
+    if "frame_check" in result:
+        cohort["frame_check"] = result["frame_check"]
+    cohort["window"] = {k: result["window"][k] for k in ("loops", "timed_ns", "minimum_ns", "loops_identical", "repeat") if k in result["window"]}
+    if "attestation" in result:
+        cohort["attestation"]=result["attestation"]
     if "execution" in result:
         if result["execution"]!="x64-on-arm64" or result["system"]!="Windows" or result["arch"].lower() not in ("arm64","aarch64"):
             raise ValueError("Invalid emulator execution architecture")
@@ -300,7 +421,7 @@ def public_fields(result, title):
         cohort["chips"] = {name:data[name] for name in NAMES if name in data}
     if "paced" in result:
         data = result["paced"]
-        if (data["frames"] != n or type(data["missed_deadlines"]) is not int or not 0 <= data["missed_deadlines"] <= n
+        if (data["frames"] != result["frames"] or type(data["missed_deadlines"]) is not int or not 0 <= data["missed_deadlines"] <= data["frames"]
                 or type(data["audio_underrun_frames"]) is not int or not 0 <= data["audio_underrun_frames"] <= 10**10
                 or not 45 <= data["refresh_hz"] <= 75 or not 8000 <= data["sample_rate"] <= 192000):
             raise ValueError("Invalid paced results")

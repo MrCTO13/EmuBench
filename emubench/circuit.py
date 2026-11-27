@@ -29,7 +29,7 @@ def scene_tile(x, y, level):
     return 4 if (7*x + 13*y) % (39 - 9*level) == 0 else 0
 
 
-def snes_image(level):
+def snes_image(level, revision=2):
     code = bytearray.fromhex("78 d8 a2 ff 9a")  # SEI, CLD, initialize emulation-mode stack.
     def store(address, value):
         code.extend((0xa9, value, 0x8d, address & 255, address >> 8))
@@ -63,6 +63,15 @@ def snes_image(level):
             store(0x2122, color & 255)
             store(0x2122, color >> 8)
     store(0x212c, 1 if level==0 else 3)
+    if level == 2 and revision == 2:
+        # Four backgrounds plus the subscreen in 512-pixel pseudo-hires.
+        store(0x2109, 4)
+        store(0x210a, 8)
+        store(0x212c, 15)
+        store(0x212d, 15)
+        store(0x2130, 2)
+        store(0x2131, 0x3f)
+        store(0x2133, 8)
     store(0x2100, 15)
     code.extend((0xa2,0))  # X is the frame/scroll counter.
     start = len(code)
@@ -86,7 +95,7 @@ def snes_image(level):
     return bytes(image)
 
 
-def gba_image(level):
+def gba_image(level, revision=2):
     image = bytearray(0x400)
     struct.pack_into("<I", image, 0, 0xea00002e)  # ARM branch to cartridge entry.
     image[0xa0:0xac] = b"CARTERCIRCUT"
@@ -110,6 +119,32 @@ def gba_image(level):
     words.append(0xe1c060b0)
     load(6,256)
     words.extend((0xe1c062b0,0xe1c062b6))  # Identity BG2 affine transform.
+    if level == 2 and revision == 2:
+        # Semitransparent 64x64 objects overlap across all 160 visible scanlines.
+        load(8,0x07000000)
+        load(9,0xc0000400)
+        load(10,30<<16)
+        load(11,8)
+        row=len(words)
+        words.extend((0xe1a06009,0xe3a05008))
+        column=len(words)
+        words.extend((0xe4886004,0xe3a07c02,0xe4887004,0xe086600a,0xe2555001))
+        words.append(0x1a000000 | ((column-len(words)-2) & 0xffffff))
+        words.extend((0xe2899014,0xe25bb001))
+        words.append(0x1a000000 | ((row-len(words)-2) & 0xffffff))
+        load(8,0x06014000)
+        load(6,0x11111111)
+        load(5,512)
+        words.extend((0xe4886004,0xe2555001,0x1afffffc))
+        load(6,0x7fff)
+        load(8,0x05000202)
+        words.append(0xe1c860b0)
+        load(6,0x1444)  # Mode 4, BG2, OBJ, linear sprite character mapping.
+        words.append(0xe1c060b0)
+        load(6,0x0440)
+        words.append(0xe1c065b0)
+        load(6,0x0808)
+        words.append(0xe1c065b2)
     words.append(0xe3a02000)
     top=len(words)
     words.extend((0xe1d030b6,0xe35300a0,0x1afffffc,0xe2822001))
@@ -153,14 +188,17 @@ class Scene:
     level: str
     digest: str
     references: tuple
+    revision: int = 1
     warmup = WARMUP
 
     @property
     def profile(self):
-        return f"{self.console}-circuit-{self.level}-v1"
+        return f"{self.console}-circuit-{self.level}-v{self.revision}"
 
     @property
     def description(self):
+        if self.revision == 2 and self.level == 'hard':
+            return 'Composite 64 translucent objects over an affine bitmap' if self.console=='gba' else 'Composite four backgrounds and the subscreen in pseudo-hires'
         return DESCRIPTIONS[LEVELS.index(self.level)]
 
     @property
@@ -181,7 +219,7 @@ class Scene:
 
 
 # Paired software reference frames from the fixed scene. SNES conversions differ by core.
-SCENES = (
+LEGACY_SCENES = (
     Scene("snes", "easy", "0637b15195e7c819a2ca695817478c696ec7d09b9f62e9d361aa912d266fa5f0", (
         ("2271f3b1f5fc6c52d180ff8810b793ea5f29036b88a9bc1419462ddc938790c1",
          "ab5a44244155c8563e74cb96b76baa9751e451b17647090925037f9ee4b841e3"),
@@ -213,4 +251,18 @@ SCENES = (
          "53883cbf076df8818003d957573cb973e66c9109b10666e967ef334d2ae44cb7"),
     )),
 )
-PROFILES = {scene.profile: scene for scene in SCENES}
+# Easy and normal retain the v1 program and checkpoints.
+from dataclasses import replace
+SCENES = tuple(replace(s, revision=2) for s in LEGACY_SCENES if s.level!="hard") + (
+    Scene("snes", "hard", "376cff6f9cbacc9c746f94f9851cf17606e1513a0e6805dfbf20c6cfbc8ce004", (
+        ("2964cc40686a5af8740aa7f6b58e71effbc1539e244e1efd967d90765d19d04e",
+         "bec65d9ee95cac48ad926856d996f32a53620f6a461e7aab1cfd1dda775baacd"),
+        ("2f0772c5403870b61942008ab0e31f9736664d320f4bc69c49f73866f5110732",
+         "c244f350afd2c538c5c5e38932b12fae97646c81927c98704d42128a20e83d07"),
+    ), revision=2),
+    Scene("gba", "hard", "f25e57ecf290bb5e1b69d61d802511c1c066915a0b8b12c55503204a0df07b23", (
+        ("031b39e63995332f7ef3d269f3ce7182902139b41c37d5ad52e99eaacaa278cd",
+         "cf092a70d060e38bd47310fe3cc7d941b2286e91ffd047438f6e79112a018737"),
+    ), revision=2),
+)
+PROFILES = {scene.profile: scene for scene in (*LEGACY_SCENES, *SCENES)}

@@ -13,6 +13,9 @@ from . import journal, scores, service
 def enqueue(db, result, title):
     if not db.execute("SELECT 1 FROM upload_settings WHERE enabled=1").fetchone():
         return
+    if result.get("repeatability",{}).get("accepted") is False:
+        print("Saved locally. This series did not pass the acceptance gate ("+", ".join(result["repeatability"].get("rejected_for") or ["spread"])+").",file=sys.stderr)
+        return
     try:
         summary = scores.public_fields(result, title)
     except (ValueError, KeyError, TypeError) as exc:
@@ -28,6 +31,8 @@ def record_scene_failure(run_id, campaign_id, scene, emulator, core_sha, worker_
                   outcome="failed", reason=reason, game=scene.title, profile=scene.profile,
                   emulator=scores.ADAPTERS[emulator][0], core_sha256=core_sha, worker_sha256=worker_sha,
                   os=platform.system(), arch=platform.machine(), cpu=scores.cpu_model())
+    from . import attest
+    record["attestation"]=attest.seal(record)
     with journal.database() as db:
         if destination_for(db)=="service" and db.execute("SELECT 1 FROM upload_settings WHERE enabled=1").fetchone():
             db.execute("INSERT OR IGNORE INTO score_outbox VALUES(?,?)", (run_id, json.dumps(record)))
@@ -55,7 +60,10 @@ def destination_for(db):
         row = db.execute("SELECT name FROM upload_destination WHERE id=1").fetchone()
         if row:
             return row[0]
-    return "github"  # Preserve existing enrollments and their queued scores.
+    # Pre-service enrollments and their outbox were explicitly configured for GitHub.
+    if db.execute("SELECT 1 FROM upload_settings LIMIT 1").fetchone():
+        return "github"
+    return "service"
 
 
 def enabled():
@@ -110,16 +118,19 @@ def claim(force):
         return token, setting[0], item[0], json.loads(item[1]), destination_for(db)
 
 
-def finish(token, run_id, failures, error=None):
+def finish(token, run_id, failures, error=None, rejected=False):
     with journal.database() as db:
         db.execute("BEGIN IMMEDIATE")
         if not db.execute("SELECT 1 FROM upload_settings WHERE lease=?", (token,)).fetchone():
             return
         delay = min(3600, 60 * 2 ** min(failures, 6)) if error else 0
-        if not error:
+        if rejected:
+            db.execute("CREATE TABLE IF NOT EXISTS rejected_uploads(id TEXT PRIMARY KEY,payload TEXT,reason TEXT)")
+            db.execute("INSERT OR REPLACE INTO rejected_uploads SELECT id,payload,? FROM score_outbox WHERE id=?",(error,run_id))
+        if not error or rejected:
             db.execute("DELETE FROM score_outbox WHERE id=?", (run_id,))
         db.execute("""UPDATE upload_settings SET lease=NULL,lease_until=0,retry_after=?,failures=?,last_error=?""",
-                   (time.time() + delay if error else 0, failures + 1 if error else 0, error))
+                   (time.time() + delay if error and not rejected else 0, failures + 1 if error and not rejected else 0, error))
 
 
 def flush(force=False, limit=None):
@@ -132,6 +143,11 @@ def flush(force=False, limit=None):
         try:
             url = (service.publish if target == "service" else scores.publish)(summary)
         except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, subprocess.SubprocessError) as exc:
+            from urllib.error import HTTPError
+            if target=="service" and (isinstance(exc,ValueError) or isinstance(exc,HTTPError) and exc.code in (400,409,413,422)):
+                finish(token,run_id,failures,"Score ineligible for signed upload",rejected=True)
+                print("Ineligible score kept locally; continuing the upload queue.",file=sys.stderr)
+                continue
             error = "GitHub CLI unavailable" if isinstance(exc, FileNotFoundError) else type(exc).__name__
             finish(token, run_id, failures, error)
             print(f"Score queued for retry ({error}). Check the selected destination and connectivity.", file=sys.stderr)

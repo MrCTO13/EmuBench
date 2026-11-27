@@ -5,6 +5,7 @@ import sqlite3
 import subprocess
 import sys
 
+from . import attest, games
 from . import duckstation, lab, adapters, accuracy, calibration, campaign, carter, chips, circuit, desktop, details, downloads, engines, identify, journal, scores, service, suite, uploads
 from .catalog import CATALOG, TARGETS, host_target
 from http.client import HTTPException
@@ -14,11 +15,13 @@ from zipfile import BadZipFile
 def main(argv=None):
     if not (sys.argv[1:] if argv is None else argv):
         return desktop.launch()
-    parser = argparse.ArgumentParser(prog="emubench", description="Emu Bench presented by Carts")
-    parser.add_argument("--version", action="version", version="Emu Bench 0.7.0")
+    parser = argparse.ArgumentParser(prog="emubench", description="EmuBench")
+    parser.add_argument("--version", action="version", version="EmuBench 0.8.0-rc.2")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("desktop", help="Open the local desktop launcher")
     commands.add_parser("emulators", help="List supported emulator downloads")
+    gamepack = commands.add_parser("games", help="List or install the free Carter homebrew collection")
+    gamepack.add_argument("action", choices=("list", "install"))
     dl = commands.add_parser("download", help="Fetch and verify the latest upstream packages")
     which = dl.add_mutually_exclusive_group(required=True)
     which.add_argument("emulator", nargs="?", type=downloads.emulator_id, choices=tuple(CATALOG))
@@ -45,6 +48,10 @@ def main(argv=None):
     run.add_argument("--frames", type=int, default=1800)
     run.add_argument("--timeout", type=int, default=300, help="Worker timeout in seconds")
     run.add_argument("--out", type=Path, help="Private result JSON destination")
+    eb1 = commands.add_parser("score", help="EmuBench 1 headline scores from saved Carter replay results")
+    eb1.add_argument("results", type=Path, nargs="+", help="Private result JSON files for one emulator build on one device")
+    eb1.add_argument("--baseline", type=Path, nargs="+", help="Reference-emulator results from the same device (Emulator score)")
+    eb1.add_argument("--json", action="store_true", help="Print the full report as JSON")
     publish = commands.add_parser("publish", help="Review and publish a public score")
     publish.add_argument("result", type=Path)
     publish.add_argument("--game", default="Personal ROM", help="Optional public display title")
@@ -66,7 +73,7 @@ def main(argv=None):
     compare.add_argument("--game", help="Display title for this comparison")
     compare.add_argument("--out", type=Path, required=True)
     suites = commands.add_parser("carter", help="Run deterministic Carter FPS scenes")
-    suites.add_argument("--rom", type=Path, help="Pinned original cartridge, or fetch with authenticated gh")
+    suites.add_argument("--rom", type=Path, help="Local pinned Carter cartridge. By default, download the public homebrew release.")
     suites.add_argument("--scene", choices=("all","easy","normal","hard"), default="all")
     suites.add_argument("--out-dir", type=Path, help="Private directory for per-scene trace files")
     official = commands.add_parser("suite", help="Build and run the public Carter Circuit workload")
@@ -118,6 +125,8 @@ def main(argv=None):
     bench.add_argument("--idle-check",type=Path)
     bench.add_argument("--study",choices=("snes","gba"),help="Find and benchmark the 24 registered game editions")
     bench.add_argument("--share-title",action="store_true")
+    from . import standalone
+    standalone.arguments(commands)
     duckstation.arguments(commands)
     lab.arguments(commands)
     campaign.arguments(commands)
@@ -128,8 +137,27 @@ def main(argv=None):
             if not args.system_dir.is_dir():
                 raise ValueError("--system-dir requires a local directory")
             os.environ["EMUBENCH_SYSTEM_DIR"]=str(args.system_dir.resolve())
+        if args.command == "score":
+            from . import score
+            runs = score.load(args.results)
+            if args.baseline:
+                report, kind = score.emulator_score(runs, score.load(args.baseline)), "Emulator score"
+            else:
+                report, kind = score.device_score(runs), "Device score"
+            print(json.dumps(report, indent=2) if args.json else score.describe(report, kind))
+            return 0
+        if args.command == "games":
+            if args.action == "list":
+                games.list_games()
+            else:
+                print(games.install() / "roms")
+            return 0
+        if args.command=="mgba-perf":
+            standalone.run_series(standalone.mgba,args)
+            return 0
         if args.command=="duckstation":
-            return duckstation.execute(args) or 0
+            standalone.run_series(duckstation.execute,args)
+            return 0
         if args.command=="study":
             return lab.execute(args) or 0
         if args.command == "bench":
@@ -211,10 +239,11 @@ def main(argv=None):
                         result["source_commit"] = release["commit"]
                     result.update(id=run_id,local_name=scene.title,started_utc=start,finished_utc=journal.now(),accuracy=record)
                     dest = args.out_dir / (scene.profile + "-" + run_id + ".json") if args.out_dir else None
+                    attest.complete(result)
                     path = scores.save(result,dest)
                     journal.complete(result,path)
                 print(f"{scene.title} · {scene.description}\n"
-                      f"{result['average_fps']} avg / {result['low_1pct_fps']} low / {result['high_1pct_fps']} high FPS"
+                      f"{accuracy.coverage(result)} · {result['speed_x']:.2f}× · {result['average_fps']} avg / {result['low_1pct_fps']} low / {result['high_1pct_fps']} high FPS"
                       f"\nPrivate result: {path}")
                 uploads.flush(limit=3)
         elif args.command == "campaign":
@@ -267,12 +296,19 @@ def main(argv=None):
                     result["paced"] = scores.paced_pass(result, core.resolve(), rom.expanduser(), args.timeout)
                 result["share_title"] = args.share_title
                 result.update(id=run_id, local_name=rom.name, started_utc=start, finished_utc=journal.now())
+                attest.complete(result)
                 path = scores.save(result, args.out)
                 journal.complete(result, path, args.game)
             print(f"{result['emulator']} {result['version']} · {result['rendered_frames']} rendered frames\n"
+                  f"Accuracy      {accuracy.coverage(result)}\n"
+                  f"Console speed {result['speed_x']:.2f}× ({result['video_mode']['refresh_hz']:.6f} Hz)\n"
+                  f"Native target {result['video_mode']['refresh_hz']:.2f} FPS ({result['video_mode']['region']})\n"
+                  f"Three-pass spread {result['repeatability']['relative_spread']:.1%} "
+                  f"({'accepted' if result['repeatability']['accepted'] else 'rejected: '+', '.join(result['repeatability'].get('rejected_for',[]))})\n"
+                  f"Timed window  {sum(result['frame_ns'])/1e9:.1f} s ({result['rendered_frames']} frames)\n"
                   f"Average FPS   {result['average_fps']:.0f}\n"
                   f"1% low FPS    {result['low_1pct_fps']:.0f}\n"
-                  f"1% high FPS   {result['high_1pct_fps']:.0f}\nPrivate result: {path}")
+                  f"Minimum FPS   {result['min_fps']:.0f}\nPrivate result: {path}")
             uploads.flush(limit=3)
         else:
             public = scores.public_fields(json.loads(args.result.read_text(encoding="utf-8")), args.game)

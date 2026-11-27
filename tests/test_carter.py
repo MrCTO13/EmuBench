@@ -37,7 +37,7 @@ class Carter(unittest.TestCase):
 
     def test_score_identity_and_privacy(self):
         scene = carter.SCENES[-1]
-        result = {"schema":1,"id":str(uuid.uuid4()),"emulator":"bsnes","profile":scene.profile,"version":"115",
+        result = {"schema":2,"window":{"loops":1,"timed_ns":1,"minimum_ns":10000000000,"loops_identical":True},"id":str(uuid.uuid4()),"emulator":"bsnes","profile":scene.profile,"version":"115",
                   "source_commit":None,"core_sha256":"2"*64,"worker_sha256":"3"*64,"system":"Darwin","arch":"arm64",
                   "warmup_frames":scene.warmup,"frames":180,"rendered_frames":180,"frame_ns":[1000000]*180,
                   "audio_sample_frames":180,"rom_sha256":carter.GAMES["snes"].digest,

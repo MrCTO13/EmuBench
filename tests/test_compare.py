@@ -20,7 +20,7 @@ class Comparison(unittest.TestCase):
 
     def test_public_snes_and_legacy(self):
         token = str(uuid.uuid4())
-        data = dict(schema=1, id=str(uuid.uuid4()), profile="snes-boot-no-input-v1", emulator="bsnes",
+        data = dict(schema=2, window=dict(loops=1,timed_ns=1,minimum_ns=10**10,loops_identical=True), id=str(uuid.uuid4()), profile="snes-boot-no-input-v1", emulator="bsnes",
                     version="115", system="Linux", arch="x86_64", source_commit=None,
                     worker_sha256="1"*64, core_sha256="2"*64, rom_sha256="private-hash",
                     frames=100, rendered_frames=100, frame_ns=[1000000]*100, warmup_frames=120,

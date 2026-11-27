@@ -28,7 +28,7 @@ class AutomaticUploads(unittest.TestCase):
     def completed(self, title="Personal ROM"):
         rom = Path("Private Game Name.gba")
         with journal.attempt(rom, "mgba") as (run_id, started):
-            result = dict(schema=1, id=run_id, local_name=rom.name, finished_utc=journal.now(), started_utc=started,
+            result = dict(schema=2, window=dict(loops=1,timed_ns=1,minimum_ns=10**10,loops_identical=True), id=run_id, local_name=rom.name, finished_utc=journal.now(), started_utc=started,
                           emulator="mGBA", profile=scores.PROFILE, version="0.10.5", source_commit=None,
                           core_sha256="a"*64, worker_sha256="b"*64, rom_sha256="private cartridge hash",
                           system="Linux", arch="x86_64", frames=100, rendered_frames=100, warmup_frames=30,
@@ -40,6 +40,15 @@ class AutomaticUploads(unittest.TestCase):
     def queued(self):
         with journal.database() as db:
             return [json.loads(row[0]) for row in db.execute("SELECT payload FROM score_outbox ORDER BY rowid")]
+
+    def test_scoreboard_on_a_new_install_and_legacy_enrollment(self):
+        with journal.database() as db:
+            self.assertEqual(uploads.destination_for(db), "service")
+            db.execute("INSERT INTO upload_settings(id,enabled) VALUES (1,1)")
+            self.assertEqual(uploads.destination_for(db), "github")
+        uploads.configure(True, "service")
+        with journal.database() as db:
+            self.assertEqual(uploads.destination_for(db), "service")
 
     def test_opt_in_has_no_backfill_and_filter_is_shared(self):
         self.completed()

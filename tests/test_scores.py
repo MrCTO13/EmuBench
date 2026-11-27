@@ -11,7 +11,7 @@ from emubench import scores
 
 class Scores(unittest.TestCase):
     def setUp(self):
-        self.trace = {"schema": 1, "id": str(uuid.uuid4()), "emulator": "mGBA",
+        self.trace = {"schema": 2, "window":{"loops":1,"timed_ns":1,"minimum_ns":10000000000,"loops_identical":True}, "id": str(uuid.uuid4()), "emulator": "mGBA",
                       "profile": scores.PROFILE, "version": "0.10.5", "source_commit": None,
                       "core_sha256": "a"*64, "worker_sha256": "b"*64, "rom_sha256": "private",
                       "system": "Linux", "arch": "x86_64", "frames": 100, "rendered_frames": 100,

@@ -37,6 +37,7 @@ jobs:
         if: matrix.platform == 'windows-arm64'
         shell: msys2 {0}
         run: cygpath -w /usr/bin >> "$GITHUB_PATH"
+      - run: python -m pip install .
       - name: Test calculations and publication
         run: python -m unittest discover -s tests
       - name: Exercise score API, pagination, matching and ranking
@@ -66,7 +67,7 @@ jobs:
           ./dist/emubench campaign resume "$RUNNER_TEMP/test.sqlite"
           ./dist/emubench campaign export "$RUNNER_TEMP/test.sqlite" --job 1 --out "$RUNNER_TEMP/campaign.json"
           ./dist/emubench history --game sample
-          python -c "import pathlib,os,json; root=pathlib.Path(os.environ['RUNNER_TEMP']); data=json.loads((root/'campaign.json').read_text()); assert data['rendered_frames']==100 and data['finished_utc'] and data['sampled_frame_changes']>0; assert 'worst_at_ms' in (root/'chart.html').read_text(encoding='utf-8')"
+          python -c "import pathlib,os,json; root=pathlib.Path(os.environ['RUNNER_TEMP']); data=json.loads((root/'campaign.json').read_text()); assert data['rendered_frames']==100*data['window']['loops'] and data['finished_utc'] and data['sampled_frame_changes']>0; assert 'worst_at_ms' in (root/'chart.html').read_text(encoding='utf-8')"
       - name: Validate native identity and public Circuit playback
         shell: bash
         run: |
@@ -78,7 +79,16 @@ jobs:
         run: |
           ./dist/emubench download --all
           ./dist/emubench run --latest-core --rom "$RUNNER_TEMP/sample.gba" --frames 120 --out "$RUNNER_TEMP/downloaded-core.json"
-          python -c "import json,os,pathlib; r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'downloaded-core.json').read_text()); assert r['rendered_frames']==120 and r['sampled_frame_changes']>0"
+          python -c "import json,os,pathlib; r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'downloaded-core.json').read_text()); assert r['rendered_frames']==120*r['window']['loops'] and r['sampled_frame_changes']>0"
+      - name: Verify full-frame motion polarity and public homebrew downloads
+        if: matrix.platform == 'linux-x64'
+        shell: bash
+        run: |
+          python -c "import subprocess,sys; from emubench import engines; subprocess.run([sys.executable,'tests/frame_motion.py',engines.install(engines.REFERENCE)[0]],check=True)"
+          python tests/public_asset.py
+      - name: Verify macOS source fallback on the native architecture
+        if: startsWith(matrix.platform, 'macos-')
+        run: python -c "from emubench import catalog,snes_build; import subprocess; core,meta=snes_build.install('bsnes',target=catalog.host_target()); subprocess.run(['./dist/emubench','suite','--emulator','bsnes','--core',str(core),'--scene','hard'],check=True)"
       - name: Measure matched SNES runs using native cores
         shell: bash
         run: |
@@ -89,8 +99,14 @@ jobs:
             ./dist/emubench suite --emulator "$emulator" --scene hard
             python tests/chip_polarity.py "$emulator"
           done
-          python -c "import json,os,pathlib; root=pathlib.Path(os.environ['RUNNER_TEMP']); a,b=[json.loads((root/(k+'.json')).read_text()) for k in ('snes9x','bsnes')]; assert all(r['rendered_frames']==300 and r['sampled_frame_changes']>200 for r in (a,b)); assert a['comparison_id']==b['comparison_id'] and a['worker_sha256']==b['worker_sha256'] and a['profile']==b['profile'] and a['core_sha256']!=b['core_sha256']"
+          python -c "import json,os,pathlib; root=pathlib.Path(os.environ['RUNNER_TEMP']); a,b=[json.loads((root/(k+'.json')).read_text()) for k in ('snes9x','bsnes')]; assert all(r['rendered_frames']==300*r['window']['loops'] and r['frame_check']['changes']==r['frame_check']['samples']-1 for r in (a,b)); assert a['comparison_id']==b['comparison_id'] and a['worker_sha256']==b['worker_sha256'] and a['profile']==b['profile'] and a['core_sha256']!=b['core_sha256']"
           ./dist/emubench compare "$RUNNER_TEMP/snes9x.json" "$RUNNER_TEMP/bsnes.json" --out "$RUNNER_TEMP/comparison.html"
+      - name: Verify real regional timing and signed receipts over HTTP
+        if: matrix.platform == 'linux-x64'
+        shell: bash
+        run: |
+          python -c "import subprocess,sys; from emubench import downloads; subprocess.run([sys.executable,'tests/region_timing.py',downloads.latest_core('snes9x')], check=True)"
+          python tests/signed_receipt.py "$RUNNER_TEMP/worker.mjs" "$RUNNER_TEMP/score.json" "$RUNNER_TEMP/snes9x.json" "$RUNNER_TEMP/bsnes.json"
       - name: Scan and benchmark a mixed folder of loose and zipped cartridges
         if: matrix.platform != 'windows-arm64'
         run: python -c "import os,subprocess,sys; subprocess.run([sys.executable,'tests/cli_library_smoke.py','dist/emubench'+('.exe' if os.name=='nt' else '')],check=True)"
@@ -98,8 +114,11 @@ jobs:
         if: matrix.platform == 'linux-x64'
         shell: bash
         run: |
-          npm install --prefix "$RUNNER_TEMP/browser-qa" playwright-core@1.56.1 --no-audit --no-fund
+          npm install --prefix "$RUNNER_TEMP/browser-qa" playwright-core@1.56.1 axe-core@4.10.3 --no-audit --no-fund
           NODE_PATH="$RUNNER_TEMP/browser-qa/node_modules" node tests/test_viewer.cjs
+          NODE_PATH="$RUNNER_TEMP/browser-qa/node_modules" node tests/test_score_browser.cjs "$RUNNER_TEMP/worker.mjs"
+          "$RUNNER_TEMP/browser-qa/node_modules/.bin/playwright-core" install --with-deps firefox
+          NODE_PATH="$RUNNER_TEMP/browser-qa/node_modules" node tests/test_score_browser.cjs "$RUNNER_TEMP/worker.mjs" firefox
       - name: Read upstream diagnostic pass and fail screens from the packaged CLI
         if: matrix.platform != 'windows-arm64'
         shell: bash
@@ -134,10 +153,13 @@ jobs:
         shell: bash
         run: |
           python -c "from emubench import engines; import subprocess,os,pathlib,json; core=engines.install(engines.REFERENCE)[0]; path=pathlib.Path(os.environ['RUNNER_TEMP'])/'pilot-qa.json'; cmd=['./dist/emubench','calibrate','--emulator','mgba','--dedicated','--core',str(core),'--windows','100','--blocks','5','--out',str(path)]; subprocess.run(cmd,check=True); first=path.read_bytes(); subprocess.run(cmd,check=True); assert first==path.read_bytes() and len(json.loads(first)['trials'])==10"
-      - name: Assemble native release and smoke-test offline reference
+      - name: Assemble native release and smoke-test the cached reference
         shell: bash
         run: |
           python tools/distribute.py
+          ./distribution/emubench games list
+          ./distribution/emubench games install
+          python -c "from emubench import games; from pathlib import Path; assert len(games.PACK['games'])==12; games.verify(Path('distribution/games'))"
           ./distribution/emubench suite --emulator mgba --scene easy
       - uses: actions/upload-artifact@v4
         with:

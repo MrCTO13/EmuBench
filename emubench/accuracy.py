@@ -98,7 +98,7 @@ def run(emulator, core, refresh=False):
         from . import color_checks
         return color_checks.run(emulator, core)
     console = "gba" if emulator == "mgba" else "snes"
-    worker = engines.worker()
+    worker, _ = engines.timing_worker(core)
     core_sha, worker_sha = engines.digest(core), engines.digest(worker)
     cache = engines.home() / "conformance" / VERSION / emulator / worker_sha / (core_sha+".json")
     if not refresh and cache.is_file():
@@ -125,3 +125,26 @@ def summary(record):
     checks = record["checks"]
     count = sum(value == "pass" for value in checks.values())
     return f"{count}/{len(checks)} diagnostic programs passed · " + ", ".join(f"{name} {value}" for name,value in checks.items())
+
+def coverage(result):
+    from . import chips, color_checks
+    console = result.get("profile","").split("-")[0]
+    expected = list(CHECKS.get(console, ())) if console!="gbc" else list(color_checks.CHECKS)
+    if console=="snes":
+        expected.extend(chips.NAMES)
+    outcomes = {**result.get("accuracy",{}).get("checks",{}), **result.get("chips",{})}
+    if not expected or not outcomes:
+        return "Untested"
+    return label(expected, outcomes)
+
+
+def label(expected, outcomes):
+    """Never fold untested or unreadable checks into a pass fraction."""
+    counts = {"pass": 0, "fail": 0, "unresolved": 0, "not run": 0}
+    for name in expected:
+        value = outcomes.get(name)
+        counts[value if value in ("pass", "fail", "unresolved") else "not run"] += 1
+    if counts["pass"] == len(expected):
+        return f"{len(expected)}/{len(expected)} checks passed"
+    words = {"pass": "passed", "fail": "failed", "unresolved": "unreadable", "not run": "not run"}
+    return " · ".join(f"{n} {words[k]}" for k, n in counts.items() if n)

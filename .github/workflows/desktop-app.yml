@@ -1,0 +1,38 @@
+name: Native desktop apps
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - emubench/gui.py
+      - emubench/assets/**
+      - tools/package_desktop.py
+      - tools/artwork/**
+      - tests/gui_smoke.py
+      - .github/workflows/desktop-app.yml
+permissions:
+  contents: read
+jobs:
+  app:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: macos-15, target: macos-arm64}
+          - {os: macos-15-intel, target: macos-x64}
+          - {os: windows-2022, target: windows-x64}
+          - {os: windows-11-arm, target: windows-arm64}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install . pyinstaller==6.16.0
+      - run: python tools/package_desktop.py
+      - name: Exercise native window, default replay, metrics and history
+        run: python tests/gui_smoke.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EmuBench-Desktop-${{ matrix.target }}
+          path: dist/gui/EmuBench-Desktop-${{ matrix.target }}.zip

@@ -1,6 +1,9 @@
 #ifndef _WIN32
 #define _POSIX_C_SOURCE 200809L
 #endif
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE  /* POSIX mode hides pthread QoS declarations otherwise. */
+#endif
 #include "libretro.h"
 #include <stdio.h>
 #include <stdarg.h>
@@ -18,10 +21,14 @@
 #include <unistd.h>
 #include <errno.h>
 #endif
+#ifdef __APPLE__
+#include <pthread.h>
+#include <pthread/qos.h>
+#endif
 
 /* The core runs in a dedicated child process. Python never enters the timed loop. */
 static struct {
-    unsigned (*api_version)(void);
+    unsigned (*api_version)(void), (*get_region)(void);
     void (*init)(void), (*deinit)(void), (*run)(void), (*unload_game)(void);
     void (*get_system_av_info)(struct retro_system_av_info *);
     void (*get_system_info)(struct retro_system_info *);
@@ -32,6 +39,8 @@ static struct {
     void (*set_input_poll)(retro_input_poll_t);
     void (*set_input_state)(retro_input_state_t);
     bool (*load_game)(const struct retro_game_info *);
+    size_t (*serialize_size)(void);
+    bool (*serialize)(void *, size_t), (*unserialize)(const void *, size_t);
 } core;
 static unsigned renders, pixel_bytes = 2;
 static uint64_t audio_frames, signature = 2166136261u;
@@ -50,7 +59,19 @@ static void core_log(enum retro_log_level level, const char *fmt, ...) {
 static uint16_t buttons;
 static const char *capture_video;
 static enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_0RGB1555;
-static uint32_t previous_sample, visual_changes;
+static uint64_t previous_sample;
+static unsigned frame_index, checked_frames, visual_changes, unchanged, longest_stall;
+static bool verify_video;
+/* Checkpoint frames are copied inside the callback (the copy time is measured and
+   excluded) and hashed after the timed advance returns, so hashing never lands in a
+   frame time. The sample phase is random per process so a core cannot predict it. */
+#define SAMPLE_PERIOD 17
+static unsigned sample_phase;
+static uint8_t *pending;
+static size_t pending_capacity;
+static unsigned pending_width, pending_height;
+static bool pending_ready;
+static uint64_t excluded_ns;
 #ifdef _WIN32
 static LARGE_INTEGER frequency, origin;
 #endif
@@ -174,17 +195,41 @@ static void video(const void *buffer, unsigned width, unsigned height, size_t pi
                 exit(fail("Incomplete diagnostic frame"));
         if (fclose(f)) exit(fail("Incomplete diagnostic frame"));
     }
-    uint32_t sample = 2166136261u;
-    for (unsigned i = 0; i < 8; i++) {
-        size_t offset = ((i * 19 + 5) % height) * pitch + ((i * 29 + 3) % width) * pixel_bytes;
-        for (unsigned channel = 0; channel < pixel_bytes; channel++)
-            sample = (sample ^ pixels[offset + channel]) * 16777619u;
+    if (verify_video && (frame_index + sample_phase) % SAMPLE_PERIOD == 0) {
+        uint64_t copy_start = clock_ns();
+        size_t row = (size_t)width * pixel_bytes, need = row * height;
+        if (need > pending_capacity) {
+            uint8_t *grown = realloc(pending, need);
+            if (!grown) exit(fail("Out of memory for frame checkpoint"));
+            pending = grown;
+            pending_capacity = need;
+        }
+        for (unsigned y = 0; y < height; ++y) memcpy(pending + y * row, pixels + y * pitch, row);
+        pending_width = width;
+        pending_height = height;
+        pending_ready = true;
+        excluded_ns += clock_ns() - copy_start;
     }
-    if (have_previous && sample != previous_sample) ++visual_changes;
-    have_previous = true;
-    previous_sample = sample;
-    signature = (signature ^ sample) * 16777619u;
     ++renders;
+}
+/* Hash every active byte, including the right and bottom edges, excluding row padding.
+   Runs between timed advances only. */
+static uint64_t loop_signature;
+static void hash_pending(void) {
+    if (!pending_ready) return;
+    pending_ready = false;
+    uint64_t sample = UINT64_C(14695981039346656037);
+    sample = (sample ^ pending_width) * UINT64_C(1099511628211);
+    sample = (sample ^ pending_height) * UINT64_C(1099511628211);
+    size_t length = (size_t)pending_width * pixel_bytes * pending_height;
+    for (size_t x = 0; x < length; ++x)
+        sample = (sample ^ pending[x]) * UINT64_C(1099511628211);
+    if (have_previous && sample != previous_sample) { ++visual_changes; unchanged = 0; }
+    else if (have_previous && ++unchanged > longest_stall) longest_stall = unchanged;
+    previous_sample = sample;
+    have_previous = true;
+    ++checked_frames;
+    loop_signature = (loop_signature ^ sample) * UINT64_C(1099511628211);
 }
 static void audio(int16_t left, int16_t right) { (void)left; (void)right; ++audio_frames; }
 static size_t audio_batch(const int16_t *buffer, size_t frames) {
@@ -211,10 +256,15 @@ static int open_core(void) {
 #define BIND(field) do { void (*symbol)(void) = (void (*)(void)) SYMBOL("retro_" #field); \
     if (!symbol) return fail("Missing libretro entry point: " #field); \
     memcpy(&core.field, &symbol, sizeof(symbol)); } while (0)
-    BIND(api_version); BIND(init); BIND(deinit); BIND(run); BIND(unload_game);
+    BIND(api_version); BIND(get_region); BIND(init); BIND(deinit); BIND(run); BIND(unload_game);
     BIND(get_system_av_info); BIND(get_system_info); BIND(set_environment); BIND(set_video_refresh);
     BIND(set_audio_sample); BIND(set_audio_sample_batch); BIND(set_input_poll);
     BIND(set_input_state); BIND(load_game);
+    /* Optional: used to repeat the same measured scene until the minimum window is met. */
+    void (*symbol)(void);
+    if ((symbol = (void (*)(void)) SYMBOL("retro_serialize_size"))) memcpy(&core.serialize_size, &symbol, sizeof(symbol));
+    if ((symbol = (void (*)(void)) SYMBOL("retro_serialize"))) memcpy(&core.serialize, &symbol, sizeof(symbol));
+    if ((symbol = (void (*)(void)) SYMBOL("retro_unserialize"))) memcpy(&core.unserialize, &symbol, sizeof(symbol));
     return core.api_version() == RETRO_API_VERSION ? 0 : fail("Unsupported libretro API");
 }
 static long number(const char *value, long min, long max) {
@@ -231,6 +281,10 @@ int main(int argc, char **argv) {
     _setmode(_fileno(stdin), _O_BINARY);
     if (!QueryPerformanceFrequency(&frequency) || !QueryPerformanceCounter(&origin))
         return fail("Performance clock unavailable");
+#endif
+#ifdef __APPLE__
+    /* Keep the timed thread on performance cores where macOS allows it. */
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 #endif
     int lock_status = claim_slot();
     if (lock_status) return lock_status;
@@ -298,6 +352,9 @@ int main(int argc, char **argv) {
     signature = 2166136261u;
     struct retro_system_av_info av = {0};
     core.get_system_av_info(&av);
+    FILE *rate = fopen("video-rate", "w");
+    if (!rate || fprintf(rate, "%u %.17g\n", core.get_region(), av.timing.fps) < 0 || fclose(rate))
+        return fail("Cannot record console video timing");
     if (paced && (!(av.timing.fps >= 45 && av.timing.fps <= 75) ||
                   !(av.timing.sample_rate >= 8000 && av.timing.sample_rate <= 192000)))
         return fail("Unsupported core refresh rate or audio sample rate");
@@ -305,28 +362,86 @@ int main(int argc, char **argv) {
     uint64_t missing = 0, last = clock_ns(), epoch = last;
     /* Two refresh periods of initial audio buffering. No physical audio device is involved. */
     uint64_t reserve = paced ? (uint64_t)(2 * av.timing.sample_rate / av.timing.fps) : 0;
-    for (long i = 0; i < frames; i++) {
-        if (replay) {
-            long pos = (warmup + i) * 2;
-            buttons = (uint16_t)(replay[pos] | replay[pos+1] << 8);
-        }
-        if (paced) wait_until(epoch + (uint64_t)(i * 1e9 / av.timing.fps));
-        uint64_t supplied = audio_frames;
-        renders = 0;
-        core.run();
-        uint64_t now = clock_ns();
-        if ((!diagnostic && (bad_video || renders != 1)) || now <= last)
-            return fail("Expected one completed software framebuffer per timed frame and a positive duration");
-        if (paced) {
-            uint64_t due = epoch + (uint64_t)((i + 1) * 1e9 / av.timing.fps);
-            if (now > due) ++late;
-            uint64_t consumed = (uint64_t)((now - epoch) * (av.timing.sample_rate / 1e9));
-            if (consumed > reserve + supplied + missing)
-                missing = consumed - reserve - supplied;
-        }
-        timings[i] = now - last;
-        last = now;
+    /* Minimum timed window. Short windows are dominated by turbo, scheduler and timer
+       noise, so the same measured frames repeat from a saved state until both the frame
+       count and the wall-time minimum are met. Paced and diagnostic runs never repeat. */
+    const char *min_env = getenv("EMUBENCH_MIN_WINDOW_MS");
+    uint64_t min_window = (!paced && !diagnostic && min_env) ? (uint64_t)number(min_env, 0, 600000) * 1000000ull : 0;
+    if (min_env && !paced && !diagnostic && number(min_env, 0, 600000) < 0) return fail("Invalid minimum window");
+    size_t state_size = 0;
+    void *state = NULL;
+    /* Only replays need a saved state: other workloads simply keep running new frames.
+       EMUBENCH_NO_STATE lets the controller fall back to repeating the replay in fresh
+       processes for cores whose save states fail on a platform. */
+    if (min_window && replay && !getenv("EMUBENCH_NO_STATE") && core.serialize_size && core.serialize && core.unserialize) {
+        state_size = core.serialize_size();
+        state = state_size ? malloc(state_size) : NULL;
+        if (state && !core.serialize(state, state_size)) { free(state); state = NULL; }
+        /* Some cores (bsnes) synchronize internal threads while saving. Restore at once
+           so every timed repeat, including the first, starts from the same state. */
+        if (state && !core.unserialize(state, state_size)) return fail("Core could not restore the scene start");
     }
+#ifdef _WIN32
+    uint64_t pid = GetCurrentProcessId();
+#else
+    uint64_t pid = (uint64_t)getpid();
+#endif
+    sample_phase = (unsigned)((clock_ns() ^ pid * UINT64_C(0x9E3779B97F4A7C15)) % SAMPLE_PERIOD);
+    if (getenv("EMUBENCH_SAMPLE_PHASE")) sample_phase = (unsigned)number(getenv("EMUBENCH_SAMPLE_PHASE"), 0, SAMPLE_PERIOD - 1);
+    uint64_t first_signature = 0, timed_ns = 0;
+    long total = 0, loops = 0, capacity = frames;
+    bool consistent = true;
+    for (;;) {
+        loop_signature = 2166136261u;
+        for (long i = 0; i < frames; i++) {
+            if (replay) {
+                long pos = (warmup + i) * 2;
+                buttons = (uint16_t)(replay[pos] | replay[pos+1] << 8);
+            }
+            if (paced) wait_until(epoch + (uint64_t)(i * 1e9 / av.timing.fps));
+            verify_video = !diagnostic;
+            frame_index = (unsigned)i;
+            uint64_t supplied = audio_frames;
+            renders = 0;
+            excluded_ns = 0;
+            core.run();
+            uint64_t now = clock_ns();
+            if ((!diagnostic && (bad_video || renders != 1)) || now <= last + excluded_ns)
+                return fail("Expected one completed software framebuffer per timed frame and a positive duration");
+            if (paced) {
+                uint64_t due = epoch + (uint64_t)((i + 1) * 1e9 / av.timing.fps);
+                if (now > due) ++late;
+                uint64_t consumed = (uint64_t)((now - epoch) * (av.timing.sample_rate / 1e9));
+                if (consumed > reserve + supplied + missing)
+                    missing = consumed - reserve - supplied;
+            }
+            if (total == capacity) {
+                long grown = capacity * 2 > 1000000 ? 1000000 : capacity * 2;
+                uint64_t *more = grown > capacity ? realloc(timings, (size_t)grown * sizeof(*timings)) : NULL;
+                if (!more) return fail("Frame trace limit reached");
+                timings = more;
+                capacity = grown;
+            }
+            timings[total] = now - last - excluded_ns;
+            timed_ns += timings[total++];
+            hash_pending();
+            last = paced ? now : clock_ns();  // Hashing between frames is never timed.
+        }
+        if (!loops) first_signature = loop_signature;
+        else if (state && loop_signature != first_signature) consistent = false;  // Only restored repeats must match.
+        ++loops;
+        if (timed_ns >= min_window || total + frames > 1000000) break;
+        if (state) {
+            if (!core.unserialize(state, state_size)) return fail("Core could not restore the scene start");
+        } else if (replay) break;  // A replay cannot run past its recording without a saved state.
+        last = clock_ns();
+    }
+    free(state);
+    signature = first_signature;
+    frames = total;
+    verify_video = false;
+    if (!diagnostic && (!visual_changes || longest_stall >= 30))
+        return fail("No motion across framebuffer checkpoints or a sustained duplicate frame sequence");
     if (load_error || (fbneo && !arcade_loaded)) return fail("Emulator could not confirm a working game or ROM set");
     if (!audio_frames) return fail("Core emitted no audio samples");
     if (paced) {
@@ -337,7 +452,8 @@ int main(int argc, char **argv) {
     }
     FILE *evidence = fopen("frame-evidence", "wb");
     if (!evidence) return fail("Could not save measured frame times");
-    fprintf(evidence, "EB2\n%s\n%" PRIu64 "\n%016" PRIx64 "\n%" PRIu32 "\n", version, audio_frames, signature, visual_changes);
+    fprintf(evidence, "EB3\n%s\n%" PRIu64 "\n%016" PRIx64 "\n%" PRIu32 "\n%ld\n%d\n%u\n%u\n", version, audio_frames, signature,
+            visual_changes, loops, consistent ? 1 : 0, sample_phase, checked_frames);
     for (long i = 0; i < frames; i++) fprintf(evidence, "%" PRIu64 "\n", timings[i]);
     if (fclose(evidence)) return fail("Incomplete frame evidence");
     // Capture the next frame after sealing the timed interval and its counters.
@@ -350,6 +466,7 @@ int main(int argc, char **argv) {
         capture_video = NULL;
     }
     free(replay);
+    free(pending);
     core.unload_game();
     core.deinit();
     free(timings);

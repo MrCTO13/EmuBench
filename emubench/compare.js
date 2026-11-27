@@ -1,9 +1,14 @@
 // A receipt links one cartridge to one device journal without publishing either identity.
+// The workload is the frames per loop: faster emulators repeat it more often in the 10 s window.
+function workloadFrames(run) {
+  const loops = run.window && Number.isInteger(run.window.loops) && run.window.loops > 0 ? run.window.loops : 1;
+  return Number.isInteger(run.rendered_frames) && run.rendered_frames % loops === 0 ? run.rendered_frames / loops : null;
+}
 function comparisonKey(run) {
   if (typeof run.comparison_id !== "string" || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(run.comparison_id) ||
       typeof run.worker_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(run.worker_sha256) ||
-      !Number.isInteger(run.rendered_frames) || !Number.isInteger(run.warmup_frames)) return null;
-  return JSON.stringify([run.comparison_id,run.submitter,run.os,run.arch,run.cpu,run.profile,run.worker_sha256,run.warmup_frames,run.rendered_frames]);
+      workloadFrames(run) === null || !Number.isInteger(run.warmup_frames)) return null;
+  return JSON.stringify([run.comparison_id,run.submitter,run.os,run.arch,run.cpu,run.profile,run.worker_sha256,run.warmup_frames,workloadFrames(run)]);
 }
 const compareBy = document.getElementById("cohort");
 const compareQuery = document.getElementById("compare-query");
@@ -27,7 +32,7 @@ function fillGroups() {
   }
   compareBy.replaceChildren(...[...groups].map(([id, entries]) => {
     const r = entries[0];
-    const label = [r.game, r.cpu || r.arch, r.os, r.warmup_frames + " warm-up + " + r.rendered_frames + " measured",
+    const label = [r.game, r.cpu || r.arch, r.os, r.warmup_frames + " warm-up + " + workloadFrames(r) + " frames per loop",
                    r.comparison_id.slice(0,8) + "/" + r.worker_sha256.slice(0,6)].join(" · ");
     return new Option(label, id);
   }));
@@ -57,7 +62,7 @@ function renderCompared() {
   compareBody.replaceChildren();
   for (const run of entries.filter(r => selected.has(r.emulator))) {
     const row = document.createElement("tr");
-    for (const value of [run.emulator,run.version,run.average_fps,run.low_1pct_fps,run.high_1pct_fps, diagnosticCount(run)]) {
+    for (const value of [run.emulator,run.version,speedLabel(run),run.average_fps,run.low_1pct_fps,run.high_1pct_fps, diagnosticCount(run)]) {
       const cell = document.createElement("td");
       cell.textContent = typeof value === "number" ? Math.round(value) : value;
       row.append(cell);

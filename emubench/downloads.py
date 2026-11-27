@@ -1,5 +1,5 @@
 """Fetch upstream artifacts into a per-user content-addressed cache."""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from functools import lru_cache
 from hashlib import sha256
 from html.parser import HTMLParser
@@ -172,17 +172,26 @@ def check_arch(path, target):
     raise ValueError(f"Downloaded executable does not match {target}")
 
 
+class CoreIndexMismatch(ValueError):
+    """A moving nightly archive differs from its rolling index."""
+
+
 def prepare_file(spec, archive, stage):
     if spec.member:
         with ZipFile(archive) as z:
             matches = [m for m in z.infolist() if m.filename == spec.member]
             if len(matches) != 1 or not 0 < matches[0].file_size <= MAX_BYTES:
                 raise ValueError("Missing or invalid core in ZIP")
-            if f"crc32:{matches[0].CRC:08x}" != spec.checksum:
-                raise ValueError("Core CRC differs from the published build index")
+            if spec.checksum.startswith("crc32:"):
+                if f"crc32:{matches[0].CRC:08x}" != spec.checksum:
+                    raise CoreIndexMismatch("Core CRC differs from the published build index")
+            elif not spec.checksum.startswith("member-sha256:"):
+                raise ValueError("Missing core fingerprint")
             out = stage / spec.member
             with z.open(matches[0]) as src, out.open("xb") as dst:
                 shutil.copyfileobj(src, dst, 1024*1024)
+        if spec.checksum.startswith("member-sha256:") and engines.digest(out) != spec.checksum.split(":")[1]:
+            raise ValueError("Core SHA-256 differs from its signed Libretro release")
         check_arch(out, spec.target)
         return out
     with archive.open("rb") as f:
@@ -205,13 +214,20 @@ def prepare_file(spec, archive, stage):
     return archive
 
 
-def transfer(spec, path):
+def transfer(spec, path, attempt=0):
     digest = sha256()
     length = 0
     url = spec.url
     if spec.member and spec.checksum.startswith("crc32:"):
-        url += "?crc32=" + spec.checksum.removeprefix("crc32:")
-    with engines.open_upstream(Request(url, headers={"User-Agent": "EmuBench/0.3"})) as response, path.open("wb") as f:
+        # Nightly archives and their index can reach an upstream CDN edge at different times.
+        # Each URL must still produce the exact indexed CRC and native architecture.
+        if attempt == 0:
+            url += "?crc32=" + spec.checksum.removeprefix("crc32:")
+        elif attempt > 1:
+            url += "?refresh=" + str(time.time_ns())
+    elif spec.member and spec.checksum.startswith("member-sha256:"):
+        url += "?sha256=" + spec.checksum.split(":")[1]
+    with engines.open_upstream(Request(url, headers={"User-Agent": "EmuBench/0.8"})) as response, path.open("wb") as f:
         if not response.url.startswith("https://"):
             raise ValueError("Insecure upstream redirect")
         header = response.headers.get("Content-Length")
@@ -229,7 +245,7 @@ def transfer(spec, path):
     return result
 
 
-def obtain(spec):
+def obtain(spec, attempt=0):
     root = engines.home() / "downloads" / spec.emulator / spec.target / spec.channel
     refs = root / "receipts"
     refs.mkdir(parents=True, exist_ok=True)
@@ -243,14 +259,14 @@ def obtain(spec):
             if re.fullmatch(r"[0-9a-f]{64}", sha):
                 cached = root / sha / filename
                 if cached.is_file() and engines.digest(cached) == sha and (
-                        not spec.checksum.startswith("sha256:") or spec.checksum == "sha256:" + sha):
+                        not spec.checksum.startswith(("sha256:", "member-sha256:")) or spec.checksum.split(":")[1] == sha):
                     return cached, meta
         except (KeyError, TypeError, ValueError):
             pass
     with tempfile.TemporaryDirectory(dir=root) as folder:
         stage = Path(folder)
         archive = stage / "payload"
-        archive_sha = transfer(spec, archive)
+        archive_sha = transfer(spec, archive, attempt)
         payload = prepare_file(spec, archive, stage)
         file_sha = engines.digest(payload) if spec.member else archive_sha
         dest = root / file_sha / filename
@@ -266,12 +282,17 @@ def obtain(spec):
 
 def get(key, target, channel="auto", version="latest", plan=False):
     index_refresh = None
+    previous_checksum = None
+    archive_attempt = 0
     for attempt in range(3):
         try:
             spec = resolve(key, target, channel, version, index_refresh)
             if plan:
                 return spec, None
-            path, _ = obtain(spec)
+            if spec.checksum != previous_checksum:
+                archive_attempt = 0
+                previous_checksum = spec.checksum
+            path, _ = obtain(spec, archive_attempt)
             return spec, path
         except (URLError, TimeoutError, ConnectionError, BadZipFile, EOFError, OSError, ValueError, HTTPException) as exc:
             transient = isinstance(exc, (URLError, TimeoutError, ConnectionError, IncompleteRead)) and not isinstance(exc, HTTPError)
@@ -279,10 +300,27 @@ def get(key, target, channel="auto", version="latest", plan=False):
                 transient = exc.code in (408, 429, 500, 502, 503, 504)
             # Rolling build index and file may change between two HTTPS requests.
             rotate = isinstance(exc, ValueError) and "differs from" in str(exc)
+            if attempt == 2 and isinstance(exc, CoreIndexMismatch):
+                from . import core_signature
+                try:
+                    signed = core_signature.resolve(spec)
+                except HTTPError as missing:
+                    if (missing.code != 404 or key not in ("bsnes","snes9x")
+                            or target != host_target() or not target.startswith("macos-")):
+                        raise
+                    from . import snes_build
+                    path, meta = snes_build.install(key, target=target)
+                    built = replace(spec, channel="source", version=meta["commit"][:12], name=path.name,
+                                    identity=meta["commit"], checksum="sha256:"+meta["sha256"], member="",
+                                    url=snes_build.REPOS[key])
+                    return built, path
+                path, _ = obtain(signed)
+                return signed, path
             if attempt == 2 or not (transient or rotate):
                 raise
             core_index.cache_clear()
             if rotate:
+                archive_attempt += 1
                 index_refresh = time.time_ns()
             time.sleep(1 + attempt)
 
@@ -318,7 +356,7 @@ def emulator_id(text):
 
 
 def describe(spec, path):
-    kind = "libretro build" if spec.channel == "core" else "upstream desktop package"
+    kind = {"core":"libretro build","source":"upstream source build","desktop":"upstream desktop package"}[spec.channel]
     print(f"{CATALOG[spec.emulator].name} · {kind} · {spec.version} · {spec.target}\n  {path or spec.url}")
 
 

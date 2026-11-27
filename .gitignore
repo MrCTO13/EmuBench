@@ -15,3 +15,7 @@ results/
 *.smc
 
 node_modules/
+installation.secret
+
+/distribution/
+/emubench-*.zip

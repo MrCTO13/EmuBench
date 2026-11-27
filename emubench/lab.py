@@ -67,6 +67,10 @@ def review(study, plan, jobs):
         game=result.get("catalog_match",{}).get("edition")
         if game not in games:
             continue
+        if result.get("repeatability",{}).get("accepted") is False:
+            raise ValueError("Unstable measurement in lab campaign")
+        if result.get("idle",{}).get("state")=="busy":
+            raise ValueError("Busy host in lab campaign")
         public=scores.public_fields(result,"Personal ROM")
         peer=public["emulator"]
         if (eligible.get(peer)!=public["core_sha256"] or public.get("campaign_id")!=plan["campaign_id"] or
@@ -78,7 +82,9 @@ def review(study, plan, jobs):
         cohort=host
         if (game,peer) in pairs:
             raise ValueError("Duplicate measurement for the same build and edition")
-        pairs[game,peer]={k:public[k] for k in ("run_id","version","average_fps","low_1pct_fps","high_1pct_fps")}
+        from . import accuracy
+        pairs[game,peer]={k:public[k] for k in ("run_id","version","average_fps","low_1pct_fps","high_1pct_fps","speed_x") if k in public}
+        pairs[game,peer]["accuracy_label"]=accuracy.coverage(public)
     missing=len(games)*len(eligible)-len(pairs)
     if missing:
         raise ValueError(f"Withheld aggregate: {missing} required game/build measurements missing")
@@ -126,7 +132,7 @@ def validate_receipt(study_list,receipt):
     expected={(g["edition"],p) for group in study["groups"] for g in group["games"] for p in builds}
     seen=set()
     for row in receipt["rows"]:
-        if set(row)!={"edition","emulator","run_id","version","average_fps","low_1pct_fps","high_1pct_fps"}:
+        if ("speed_x" in row and not (isinstance(row["speed_x"],(int,float)) and 0<row["speed_x"]<1e6)) or ("accuracy_label" in row and not re.fullmatch(r"Untested|[0-9]{1,2}/[0-9]{1,2} checks passed|[0-9]{1,2} [a-z ]+( · [0-9]{1,2} [a-z ]+)*",row["accuracy_label"])) or set(row)-{"speed_x","accuracy_label"}!={"edition","emulator","run_id","version","average_fps","low_1pct_fps","high_1pct_fps"}:
             raise ValueError("Unexpected public game fields")
         pair=(row["edition"],row["emulator"])
         if pair not in expected or row["run_id"] in seen or not re.fullmatch(r"[a-zA-Z0-9 ()._+-]{1,80}",row["version"]):

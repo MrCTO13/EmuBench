@@ -25,8 +25,11 @@ if host_target()=="windows-arm64":
     shutil.copy2(engines.artifact(cross,"emubench-worker.exe"),named)
     extra=["--add-binary",str(named)+os.pathsep+"emubench/native/bin"]
 subprocess.run([sys.executable, "-m", "PyInstaller", "--onefile", "--clean", "--noconfirm",
-                *extra, "--paths", ".", "--name", "emubench",
+                *extra, "--paths", ".", "--name", "emubench", "--hidden-import", "_cffi_backend",
+                "--add-data", "emubench/carter_games.json" + os.pathsep + "emubench",
                 "--add-data", "emubench/studies.json" + os.pathsep + "emubench",
+                "--add-data", "emubench/verified_builds.json" + os.pathsep + "emubench",
+                "--add-data", "emubench/reference_eb1.json" + os.pathsep + "emubench",
                 "--add-data", "emubench/desktop.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/report.html" + os.pathsep + "emubench",
                 "--add-data", "emubench/chart.js" + os.pathsep + "emubench",
@@ -42,3 +45,12 @@ shutil.copy2(next(p for p in python_licenses if p.is_file()), notices / "Python-
 installer = metadata.distribution("pyinstaller")
 license_path = next(p for p in installer.files if p.name == "COPYING.txt")
 shutil.copy2(installer.locate_file(license_path), notices / "PyInstaller-COPYING.txt")
+
+# Include upstream notices for the libraries carried in the single-file executable.
+for name in ("PyNaCl", "pillow", "psutil", "cffi", "pycparser", "ecdsa", "six"):
+    dist = metadata.distribution(name)
+    for entry in dist.files or ():
+        if entry.name.lower().startswith(("license","copying")) and ".dist-info" in str(entry):
+            target = notices / name / entry.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(dist.locate_file(entry), target)

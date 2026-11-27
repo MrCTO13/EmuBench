@@ -1,0 +1,122 @@
+{
+  "asset": "EmuBench-Carter-Games-v1.zip",
+  "sha256": "e51e706f3f12d566f61fb2de55154f81072b85b39cf9e59765d94e948aca0ce6",
+  "size": 13585263,
+  "games": [
+    {
+      "title": "Cart-Man",
+      "console": "atari2600",
+      "edition": "v44",
+      "path": "roms/atari2600/Cart-Man.a26",
+      "size": 32768,
+      "sha256": "6de631e67e24190866c0ec139bc9564f725d869c42a8059c445d6753627d61f8"
+    },
+    {
+      "title": "CARTLINK",
+      "console": "gb",
+      "edition": "v24",
+      "path": "roms/gb/CARTLINK.gb",
+      "size": 524288,
+      "sha256": "d0a17ebbdb58cce2646bdd6265873596c9ed96c4998c3c6596219ce07a92dda0"
+    },
+    {
+      "title": "The Lost Save",
+      "console": "gb",
+      "edition": "v4",
+      "path": "roms/gb/The-Lost-Save.gb",
+      "size": 32768,
+      "sha256": "e5245f138cb25574abc0f2cfd391e4c3624ae7632a2fe156b50d641ca5500093"
+    },
+    {
+      "title": "PinkyMon Pink",
+      "console": "gbc",
+      "edition": "v28",
+      "path": "roms/gbc/PinkyMon-Pink.gbc",
+      "size": 1048576,
+      "sha256": "6aaba2d8d2eb6f1e73d1b124b194a30122a0ed3d9d367572bce2abc4957a0ac1"
+    },
+    {
+      "title": "PinkyMon Rose",
+      "console": "gbc",
+      "edition": "v28",
+      "path": "roms/gbc/PinkyMon-Rose.gbc",
+      "size": 1048576,
+      "sha256": "c6abcdcb4d806cca3f4d25080c96889f4cf82af2a4d91693f3c75d9459ef2252"
+    },
+    {
+      "title": "Cartervania",
+      "console": "gba",
+      "edition": "v45",
+      "path": "roms/gba/Carts-Cartervania-GBA.gba",
+      "size": 4194304,
+      "sha256": "817d58c35906a283d70bb220d05b18159b6473feb2bb74f1bb4e381f8b10de4e"
+    },
+    {
+      "title": "Phantasy Cart II",
+      "console": "genesis",
+      "edition": "v14",
+      "path": "roms/genesis/Phantasy-Cart-II.gen",
+      "size": 4194304,
+      "sha256": "b329e7a32a201df8d9eb91f941786d1003eaa83f5c43576ae02b454aa2188c95"
+    },
+    {
+      "title": "Final Cartasy",
+      "console": "n64",
+      "edition": "v12",
+      "path": "roms/n64/Final-Cartasy.z64",
+      "size": 10452992,
+      "sha256": "19b18d97907e130b0a2271f308baf18818674f13471eb2a3c8e177b2759d080f"
+    },
+    {
+      "title": "The Legend of Carter",
+      "console": "nes",
+      "edition": "v50",
+      "path": "roms/nes/The-Legend-of-Carter.nes",
+      "size": 98320,
+      "sha256": "df298a893059dc9382111f5d707e1ea1d2ee99b9439bc7128b288e7c697cf9b7"
+    },
+    {
+      "title": "Carts Memory Wings",
+      "console": "sms",
+      "edition": "v18",
+      "path": "roms/sms/Memory-Wings.sms",
+      "size": 524288,
+      "sha256": "b8c54a902c8cb1fec962af3bdfd0ced2d22240ca263bb2b9949883305c3e6456"
+    },
+    {
+      "title": "Super Carter Bros. 3",
+      "console": "snes",
+      "edition": "retry-label edition",
+      "path": "roms/snes/Super-Carter-Bros-3.sfc",
+      "size": 1048576,
+      "sha256": "01e6f240178965f9d149e65ffeb8197bf460e9b9a6128467f4b012ff3d075ec9"
+    },
+    {
+      "title": "The Lost Save",
+      "console": "snes",
+      "edition": "v4",
+      "path": "roms/snes/The-Lost-Save.sfc",
+      "size": 262144,
+      "sha256": "6ea7aaf71bcb4ad61c2f0b941dacbd3b4c744ac40c1b3281e5ac0bc48c4ca54d"
+    }
+  ],
+  "notices": {
+    "README.txt": "573b4a363ed310cc39d9c9c937f443097fd841c0323710d810806fbb157f684d",
+    "games.json": "519f66e976bde462e0ff317b14b1e14040e8075b9f65613bbc33ec13f6babd47",
+    "notices/cartervania-gba/GBDK-library.txt": "138567c019af8a54e4cf46b6621587d9912658d9d3359f8902bac728f7fe4ec9",
+    "notices/cartervania-gba/PVSnesLib.txt": "4770ec720fbfc415d523b8649d6a38dd080f42ebb04579c5bed9cb4c4994e383",
+    "notices/cartervania-gba/SDCC.txt": "2782c0c9ef0c786f09b0170a16dc5d5b7cafa66b7b16919270a01b587a725d5b",
+    "notices/cartervania-gba/SNESMOD-notes.txt": "33b2669892401d509af4a24f55315174f96eae422264771341950d8453685ea2",
+    "notices/cartlink-gb/LICENSE_GPLV2_LE": "138567c019af8a54e4cf46b6621587d9912658d9d3359f8902bac728f7fe4ec9",
+    "notices/cartlink-gb/LICENSE_SDCC": "2782c0c9ef0c786f09b0170a16dc5d5b7cafa66b7b16919270a01b587a725d5b",
+    "notices/cartman-atari2600/THIRD_PARTY.txt": "0c0203d6e69bfe1e178560836128a4559ec3a19a3dfb576184dd9685e0db9579",
+    "notices/carts-memory-wings-sms/THIRD_PARTY.txt": "ce9aa1728179476e48af2d5bced84724a50d2481d5e33350c1991de06c968adf",
+    "notices/final-cartasy-n64/Tiny3D-MIT.txt": "4935e2daf0f5e29268c21365043442d26b3208d4ccc527c3740d95151a47329b",
+    "notices/final-cartasy-n64/libdragon-Unlicense.txt": "88d9b4eb60579c191ec391ca04c16130572d7eedc4a86daa58bf28c6e14c9bcd",
+    "notices/legend-of-carter-nes/cc65.txt": "8e87ae93bbc45dbe3def75c8b20ba2905b052ddf766fe61d55b8e16a807d57f3",
+    "notices/phantasy-cart-ii-genesis/THIRD_PARTY.txt": "52b4efee509632645600a7be75c4a2281e2d565811e71fb79805b240799fa73d",
+    "notices/pinkymon-gbc/GBDK-library.txt": "138567c019af8a54e4cf46b6621587d9912658d9d3359f8902bac728f7fe4ec9",
+    "notices/pinkymon-gbc/SDCC.txt": "2782c0c9ef0c786f09b0170a16dc5d5b7cafa66b7b16919270a01b587a725d5b",
+    "notices/super-carter-bros-3-snes/THIRD_PARTY.txt": "113d226c07d647913aa377829345df64482aa14c1bf63d8e0080eaf6e70890f8"
+  }
+}

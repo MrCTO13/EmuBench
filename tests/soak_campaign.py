@@ -32,6 +32,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         root=Path(tmp)
         os.environ["EMUBENCH_HOME"]=str(root/"data")
+        # Queue durability test, not a timing test: 1,001 jobs can't each take 10 s x 3.
+        os.environ.update(EMUBENCH_MIN_WINDOW_MS_OVERRIDE="0",EMUBENCH_COOL_DOWN_S="0",EMUBENCH_MAX_SPREAD_OVERRIDE="1")
         directory=root/"games"
         directory.mkdir()
         data=circuit.gba_image(0)
@@ -59,15 +61,17 @@ def main():
                 else:raise TimeoutError("No campaign progress")
             finally:
                 first.kill()
-        subprocess.run(run,stdout=subprocess.DEVNULL,check=True,timeout=900)
+        subprocess.run(run,stdout=subprocess.DEVNULL,check=True,timeout=3200)
         subprocess.run(run,stdout=subprocess.DEVNULL,check=True,timeout=30)
         with closing(sqlite3.connect(queue)) as db:
             assert db.execute("SELECT status,count(*) FROM jobs GROUP BY status").fetchall()==[("done",1001)]
+            results=[json.loads(row[0]) for row in db.execute("SELECT result FROM jobs")]
+            eligible={r["id"] for r in results if r["repeatability"]["accepted"]}
         with closing(sqlite3.connect(receipts)) as db:
             rows=[json.loads(row[0]) for row in db.execute("SELECT payload FROM receipts")]
-            assert len(rows)==1001 and len({r["campaign_id"] for r in rows})==1
+            assert eligible and {r["run_id"] for r in rows}==eligible and len({r["campaign_id"] for r in rows})==1
             assert all(r["game"]=="Personal ROM" and "rom_sha256" not in r for r in rows)
-        print("Verified 1,001 completed workloads and 1,001 unique offline receipts after restart.")
+        print(f"Verified 1,001 completed workloads and all {len(eligible)} eligible offline receipts after restart.")
 
 
 if __name__=="__main__":

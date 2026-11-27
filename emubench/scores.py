@@ -69,7 +69,7 @@ class InterruptedWindow(InterruptedError):
 HEADER = 9  # EB3 evidence header lines before the frame times.
 
 
-def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False, filename=None, external=None, expected_digest=None, force_color=False, video_mode=None, min_window_ms=0):
+def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, playback=None, diagnostic=False, paced=False, filename=None, external=None, expected_digest=None, force_color=False, video_mode=None, min_window_ms=0, no_state=False, phase=None):
     engines.home().mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "EMUBENCH_CORE_PATH": str(core),
            "EMUBENCH_WORKER_LOCK": str(engines.home() / "measure.lock")}
@@ -82,7 +82,12 @@ def run_worker(worker, core, data, warmup, frames, timeout, ready, emulator, pla
         env.pop("EMUBENCH_CONTENT_NAME",None)
         env.pop("EMUBENCH_FORCE_COLOR",None)
         env.pop("EMUBENCH_SAMPLE_PHASE",None)
+        env.pop("EMUBENCH_NO_STATE",None)
         env["EMUBENCH_MIN_WINDOW_MS"] = str(int(min_window_ms))
+        if no_state:
+            env["EMUBENCH_NO_STATE"] = "1"
+        if phase is not None:
+            env["EMUBENCH_SAMPLE_PHASE"] = str(int(phase))
         if force_color:
             env["EMUBENCH_FORCE_COLOR"]="1"
         if filename:
@@ -204,10 +209,32 @@ def _measure_once(rom, requested, core, warmup, frames, timeout, ready, expected
     before = telemetry.snapshot()
     idle = conditions.idle()
     from .repeats import MIN_WINDOW_MS
-    output, checkpoints = run_worker(worker, core, data, warmup, frames, timeout, ready, name,
-                                     scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,
-                                     external=external, expected_digest=rom_hash, video_mode=video_mode,
-                                     min_window_ms=MIN_WINDOW_MS)
+    def attempt(no_state=False, phase=None):
+        return run_worker(worker, core, data, warmup, frames, timeout, ready, name,
+                          scene.playback if scene else None, filename=rom.name if console=="arcade" else "workload"+suffix,
+                          external=external, expected_digest=rom_hash, video_mode=video_mode,
+                          min_window_ms=MIN_WINDOW_MS, no_state=no_state, phase=phase)
+    method = "state"
+    try:
+        output, checkpoints = attempt()
+    except ValueError as exc:
+        # A core whose save state crashes on this platform: repeat the replay in fresh
+        # processes instead. Each process boots and replays identically.
+        if not scene or "worker exited" not in str(exc):
+            raise
+        method = "process"
+        output, checkpoints = attempt(no_state=True)
+    output = _evidence(output, frames)
+    if scene and output["loops"] == 1 and sum(output["times"]) < MIN_WINDOW_MS * 1_000_000:
+        method = "process"
+        while sum(output["times"]) < MIN_WINDOW_MS * 1_000_000 and len(output["times"]) + frames <= 1_000_000:
+            more, more_checkpoints = attempt(no_state=True, phase=output["phase"])
+            more = _evidence(more, frames)
+            identical = (more["fingerprint"] == output["fingerprint"] and more_checkpoints == checkpoints
+                         and more["version"] == output["version"])
+            output.update(times=output["times"] + more["times"], loops=output["loops"] + more["loops"],
+                          samples=output["samples"] + more["samples"], changes=output["changes"] + more["changes"],
+                          audio=output["audio"] + more["audio"], consistent=output["consistent"] and more["consistent"] and identical)
     if core_hash != engines.digest(core) or worker_hash != engines.digest(worker):
         raise ValueError("Core or timing worker changed during measurement")
     scene_evidence = {'idle':idle,'conditions':telemetry.window(before)}
@@ -218,20 +245,16 @@ def _measure_once(rom, requested, core, warmup, frames, timeout, ready, expected
     if scene:
         scene_evidence["scene_checkpoints"] = scene.validate(rom_hash, warmup, frames, checkpoints)
         profile = scene.profile
-    if len(output) < HEADER + frames or output[0] != "EB3":
-        raise ValueError("Incomplete frame evidence")
-    version, audio, fingerprint, visual_changes, loops, consistent, phase, samples = output[1:HEADER]
-    loops, samples = int(loops), int(samples)
-    if len(output) != HEADER + frames * loops:
-        raise ValueError("Incomplete frame evidence")
-    if scene and consistent != "1":
+    version, audio, fingerprint, visual_changes = output["version"], output["audio"], output["fingerprint"], output["changes"]
+    loops, samples, phase, consistent = output["loops"], output["samples"], output["phase"], output["consistent"]
+    if scene and not consistent:
         raise ValueError("Repeated scene passes rendered different frames (non-deterministic core or save state)")
     if tag and version != tag:
         raise ValueError(f"Core reported {version}, expected upstream release {tag}")
-    times = list(map(int, output[HEADER:]))
+    times = output["times"]
     video_mode = reference_mode(console, video_mode)
     scene_evidence.update(frame_check=dict(method="copy-fnv64-17r", samples=samples, changes=int(visual_changes), signature=fingerprint, phase=int(phase)),
-                          window=dict(loops=loops, timed_ns=sum(times), minimum_ns=MIN_WINDOW_MS*1_000_000, loops_identical=consistent=="1"), mode="libretro", video_mode=video_mode, speed_x=speed(times, video_mode))
+                          window=dict(loops=loops, timed_ns=sum(times), minimum_ns=MIN_WINDOW_MS*1_000_000, loops_identical=consistent, repeat=method), mode="libretro", video_mode=video_mode, speed_x=speed(times, video_mode))
     return {**({"execution":"x64-on-arm64"} if translated else {}), **({"build_recipe":"mgba-libretro-cmake-v1"} if tag else {}), **scene_evidence, "schema": SCHEMA, "id": str(uuid.uuid4()), "profile": profile,
             "comparison_id": journal.comparison_id(rom_hash), "device_id": journal.comparison_id("installation"),
             "emulator": name, "version": version, "source_commit": commit,
@@ -241,6 +264,17 @@ def _measure_once(rom, requested, core, warmup, frames, timeout, ready, expected
             "warmup_frames": warmup, "frames": frames, "rendered_frames": len(times),
             "sampled_frame_changes": int(visual_changes), "audio_sample_frames": int(audio), "pixel_sample_signature": fingerprint,
             "frame_ns": times, **stats(times)}
+
+
+def _evidence(lines, frames):
+    if len(lines) < HEADER + frames or lines[0] != "EB3":
+        raise ValueError("Incomplete frame evidence")
+    version, audio, fingerprint, changes, loops, consistent, phase, samples = lines[1:HEADER]
+    loops = int(loops)
+    if len(lines) != HEADER + frames * loops:
+        raise ValueError("Incomplete frame evidence")
+    return dict(version=version, audio=int(audio), fingerprint=fingerprint, changes=int(changes), loops=loops,
+                consistent=consistent == "1", phase=int(phase), samples=int(samples), times=list(map(int, lines[HEADER:])))
 
 
 def paced_pass(result, core, rom, timeout):
@@ -358,7 +392,7 @@ def public_fields(result, title):
         cohort["idle"] = result["idle"]
     if "frame_check" in result:
         cohort["frame_check"] = result["frame_check"]
-    cohort["window"] = {k: result["window"][k] for k in ("loops", "timed_ns", "minimum_ns", "loops_identical")}
+    cohort["window"] = {k: result["window"][k] for k in ("loops", "timed_ns", "minimum_ns", "loops_identical", "repeat") if k in result["window"]}
     if "attestation" in result:
         cohort["attestation"]=result["attestation"]
     if "execution" in result:

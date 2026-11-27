@@ -370,7 +370,10 @@ int main(int argc, char **argv) {
     if (min_env && !paced && !diagnostic && number(min_env, 0, 600000) < 0) return fail("Invalid minimum window");
     size_t state_size = 0;
     void *state = NULL;
-    if (min_window && core.serialize_size && core.serialize && core.unserialize) {
+    /* Only replays need a saved state: other workloads simply keep running new frames.
+       EMUBENCH_NO_STATE lets the controller fall back to repeating the replay in fresh
+       processes for cores whose save states fail on a platform. */
+    if (min_window && replay && !getenv("EMUBENCH_NO_STATE") && core.serialize_size && core.serialize && core.unserialize) {
         state_size = core.serialize_size();
         state = state_size ? malloc(state_size) : NULL;
         if (state && !core.serialize(state, state_size)) { free(state); state = NULL; }

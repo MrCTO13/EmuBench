@@ -84,7 +84,7 @@ export function validate(r) {
     "os","arch","cpu","warmup_frames","rendered_frames","average_fps","low_1pct_fps","high_1pct_fps","timing",
     "comparison_id","campaign_id","device_id","accuracy","scene_checkpoints","scene_description","edition","paced","chips","build_recipe","execution","speed_x","video_mode","mode","frame_check","idle","repeatability","conditions","hardware","window","min_fps"]));
   const w=r.window;
-  requireValue(fields(w,["loops","timed_ns","minimum_ns","loops_identical"]) && integer(w.loops,1,1e6) && w.minimum_ns===MIN_WINDOW_NS
+  requireValue(fields(w,["loops","timed_ns","minimum_ns","loops_identical","repeat"]) && [undefined,"state","process"].includes(w.repeat) && integer(w.loops,1,1e6) && w.minimum_ns===MIN_WINDOW_NS
     && integer(w.timed_ns,MIN_WINDOW_NS,1e15) && w.loops_identical===true && r.rendered_frames%w.loops===0 && integer(r.min_fps,0,1e8) && r.min_fps<=r.low_1pct_fps);
   requireValue(Object.hasOwn(CORE_CONSOLES,r.emulator) && plain(r.run_id,36,UUID) && plain(r.game,90,TEXT));
   requireValue(["Darwin","Linux","Windows"].includes(r.os) && /^(arm64|aarch64|amd64|x86_64)$/i.test(r.arch));

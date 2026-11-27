@@ -90,7 +90,10 @@ def execute(args):
                         pass
                 print("Waiting for an uninterrupted idle window",flush=True)
                 time.sleep(15)
-            times=list(map(int,output[5:]))
+            try:
+                times=scores._evidence(output,frames)["times"]
+            except ValueError as exc:
+                raise ValueError("Incomplete calibration evidence") from exc
             if len(times)!=frames:
                 raise ValueError("Incomplete calibration evidence")
             rows.append(dict(block=block,frames=frames,metrics=metrics(times),

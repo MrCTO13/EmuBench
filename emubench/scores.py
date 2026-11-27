@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 
-from . import adapters, carter, circuit, conditions, telemetry, hardware, details, engines, identify, journal, library
+from . import adapters, carter, circuit, conditions, telemetry, hardware, details, engines, identify, journal, library, fsutil
 
 REPOSITORY = "MrCTO13/EmuBench"
 PROFILE = "gba-boot-no-input-v1"
@@ -310,7 +310,7 @@ def save(result, destination):
             stage.unlink(missing_ok=True)
             raise
     try:
-        os.link(stage, destination)
+        fsutil.publish_new(stage, destination)
     finally:
         stage.unlink(missing_ok=True)
     return destination

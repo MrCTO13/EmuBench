@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 from . import attest
-from . import lab, adapters, accuracy, carter, chips, circuit, downloads, engines, journal, library, scores, uploads
+from . import lab, adapters, accuracy, carter, chips, circuit, downloads, engines, journal, library, scores, uploads, fsutil
 
 
 def arguments(commands):
@@ -172,7 +172,7 @@ def create(args):
             db.execute("CREATE INDEX pending_jobs ON jobs(id) WHERE status='pending'")
             db.execute("CREATE TABLE failures (job INTEGER, time REAL, reason TEXT)")
             enqueue(db, plan, 1)
-        os.link(stage, dest)
+        fsutil.publish_new(stage, dest)
     print(f"Shared campaign (when uploads are enabled): {uploads.service.ORIGIN}/campaign/{plan['campaign_id']}")
     print(f"Created {dest} with {len(workloads)} jobs in round 1")
 
